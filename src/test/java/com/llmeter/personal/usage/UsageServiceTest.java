@@ -16,31 +16,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class UsageServiceTest {
 
     @Test
-    void deveRetornarUsoDeTodosOsAdapters() {
+    void shouldReturnUsageFromAllAdapters() {
         final var collectedAt = Instant.parse("2026-10-22T12:00:00Z");
-        final var usoCodex = new UsageSnapshot(
+        final var codexUsage = new UsageSnapshot(
                 ProviderType.CODEX, 100L, 40L, null, collectedAt
         );
-        final var usoClaude = new UsageSnapshot(
+        final var claudeUsage = new UsageSnapshot(
                 ProviderType.CLAUDE, 200L, 60L, 30L, collectedAt
         );
         final List<LlmProviderAdapter> adapters = List.of(
-                new FakeLlmProviderAdapter(usoCodex),
-                new FakeLlmProviderAdapter(usoClaude)
+                new FakeLlmProviderAdapter(codexUsage),
+                new FakeLlmProviderAdapter(claudeUsage)
         );
         final var service = new UsageService(adapters);
 
-        final var resultado = service.getUsage();
+        final var result = service.getUsage();
 
-        assertEquals(List.of(usoCodex, usoClaude), resultado);
+        assertEquals(List.of(codexUsage, claudeUsage), result);
     }
 
     @Test
-    void deveRetornarListaVaziaQuandoNaoExistiremAdapters() {
+    void shouldReturnEmptyListWhenThereAreNoAdapters() {
         final var service = new UsageService(List.of());
 
-        final var resultado = service.getUsage();
+        final var result = service.getUsage();
 
-        assertTrue(resultado.isEmpty());
+        assertTrue(result.isEmpty());
     }
 }
