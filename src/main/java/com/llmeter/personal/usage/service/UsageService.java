@@ -1,4 +1,4 @@
-package com.llmeter.personal.usage.domain.service;
+package com.llmeter.personal.usage.service;
 
 import com.llmeter.personal.provider.LlmProviderAdapter;
 import com.llmeter.personal.usage.domain.dto.UsageSnapshot;

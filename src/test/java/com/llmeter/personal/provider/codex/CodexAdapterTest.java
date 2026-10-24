@@ -3,6 +3,10 @@ package com.llmeter.personal.provider.codex;
 import com.llmeter.personal.provider.domain.ProviderType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -100,5 +104,97 @@ public class CodexAdapterTest {
         assertEquals(Long.valueOf(0L), result.inputTokens());
         assertNull(result.outputTokens());
         assertNull(result.cachedTokens());
+    }
+
+    @Test
+    void shouldRejectNegativeTokenCounts(@TempDir final Path directory)
+            throws IOException {
+        final var file = directory.resolve("session.jsonl");
+
+        Files.writeString(file, """
+            {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":-10,"output_tokens":40,"cached_input_tokens":20}}}}
+            """);
+
+        final var adapter = new CodexAdapter(file);
+
+        assertThrows(IllegalStateException.class, adapter::getUsage);
+    }
+
+    @ParameterizedTest
+    @CsvSource(textBlock = """
+            input_tokens, "100"
+            input_tokens, 1.5
+            input_tokens, 9223372036854775808
+            output_tokens, "100"
+            output_tokens, 1.5
+            output_tokens, 9223372036854775808
+            cached_input_tokens, "100"
+            cached_input_tokens, 1.5
+            cached_input_tokens, 9223372036854775808
+            """)
+    void shouldRejectInvalidTokenCounts(
+            final String field,
+            final String tokenValue,
+            @TempDir final Path directory
+    ) throws IOException {
+        final var file = directory.resolve("session.jsonl");
+        Files.writeString(file, """
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"%s":%s}}}}
+                """.formatted(field, tokenValue));
+        final var adapter = new CodexAdapter(file);
+
+        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+
+        assertEquals("Invalid token count for field " + field, exception.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, Long.MAX_VALUE})
+    void shouldAcceptTokenCountsWithinLongRange(
+            final long tokens,
+            @TempDir final Path directory
+    ) throws IOException {
+        final var file = directory.resolve("session.jsonl");
+        Files.writeString(file, """
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":%1$d,"output_tokens":%1$d,"cached_input_tokens":%1$d}}}}
+                """.formatted(tokens));
+        final var adapter = new CodexAdapter(file);
+
+        final var result = adapter.getUsage();
+
+        assertEquals(Long.valueOf(tokens), result.inputTokens());
+        assertEquals(Long.valueOf(tokens), result.outputTokens());
+        assertEquals(Long.valueOf(tokens), result.cachedTokens());
+    }
+
+    @Test
+    void shouldRejectMalformedJson(@TempDir final Path directory) throws IOException {
+        final var file = directory.resolve("session.jsonl");
+        Files.writeString(file, """
+                {"type":"event_msg","payload":
+                """);
+        final var adapter = new CodexAdapter(file);
+
+        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+
+        assertEquals("Invalid JSON in Codex session at line 1", exception.getMessage());
+        assertInstanceOf(JacksonException.class, exception.getCause());
+    }
+
+    @Test
+    void shouldReportMalformedJsonLineAfterBlankLineAndValidUsage(@TempDir final Path directory)
+            throws IOException {
+        final var file = directory.resolve("session.jsonl");
+        Files.writeString(file, """
+
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100}}}}
+                {"type":"event_msg","payload":
+                """);
+        final var adapter = new CodexAdapter(file);
+
+        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+
+        assertEquals("Invalid JSON in Codex session at line 3", exception.getMessage());
+        assertInstanceOf(JacksonException.class, exception.getCause());
     }
 }

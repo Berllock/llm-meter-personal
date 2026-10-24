@@ -4,6 +4,7 @@ import com.llmeter.personal.provider.LlmProviderAdapter;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.quota.domain.dto.QuotaSnapshot;
 import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -41,13 +42,22 @@ public class CodexAdapter implements LlmProviderAdapter {
 
             JsonNode lastTokenUsage = null;
             String line;
+            long lineNumber = 0;
 
             while ((line = reader.readLine()) != null) {
+                lineNumber++;
                 if (line.isBlank()) {
                     continue;
                 }
 
-                final var event = mapper.readTree(line);
+                final JsonNode event;
+                try {
+                    event = mapper.readTree(line);
+                } catch (final JacksonException e) {
+                    throw new IllegalStateException(
+                            "Invalid JSON in Codex session at line " + lineNumber, e
+                    );
+                }
                 final var payload = event.path("payload");
 
                 if (!event.path("type").equals(mapper.valueToTree("event_msg"))
@@ -92,8 +102,12 @@ public class CodexAdapter implements LlmProviderAdapter {
             throw new IllegalStateException("Invalid token count for field " + field);
         }
 
-        return value.longValue();
+        final var tokens = value.longValue();
+
+        if (tokens < 0) {
+            throw new IllegalStateException("Negative token count for field " + field);
+        }
+
+        return tokens;
     }
-
-
 }

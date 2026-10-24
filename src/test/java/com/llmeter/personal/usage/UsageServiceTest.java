@@ -4,7 +4,7 @@ import com.llmeter.personal.provider.FakeLlmProviderAdapter;
 import com.llmeter.personal.provider.LlmProviderAdapter;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
-import com.llmeter.personal.usage.domain.service.UsageService;
+import com.llmeter.personal.usage.service.UsageService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
