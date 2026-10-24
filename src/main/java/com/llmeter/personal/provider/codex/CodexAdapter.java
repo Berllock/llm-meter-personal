@@ -1,6 +1,7 @@
 package com.llmeter.personal.provider.codex;
 
 import com.llmeter.personal.provider.LlmProviderAdapter;
+import com.llmeter.personal.provider.ProviderCollectionException;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.quota.domain.dto.QuotaSnapshot;
 import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
@@ -9,7 +10,6 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -54,7 +54,7 @@ public class CodexAdapter implements LlmProviderAdapter {
                 try {
                     event = mapper.readTree(line);
                 } catch (final JacksonException e) {
-                    throw new IllegalStateException(
+                    throw new ProviderCollectionException(
                             "Invalid JSON in Codex session at line " + lineNumber, e
                     );
                 }
@@ -75,7 +75,7 @@ public class CodexAdapter implements LlmProviderAdapter {
             }
 
             if (lastTokenUsage == null) {
-                throw new IllegalStateException("No token count found in session file");
+                throw new ProviderCollectionException("No token count found in session file");
             }
 
             return new UsageSnapshot(
@@ -86,7 +86,7 @@ public class CodexAdapter implements LlmProviderAdapter {
                     Instant.now()
             );
         } catch (final IOException e) {
-            throw new UncheckedIOException("Could not read the Codex session", e);
+            throw new ProviderCollectionException("Could not read the Codex session", e);
         }
 
     }
@@ -99,13 +99,13 @@ public class CodexAdapter implements LlmProviderAdapter {
         }
 
         if (!value.isIntegralNumber() || !value.canConvertToLong()) {
-            throw new IllegalStateException("Invalid token count for field " + field);
+            throw new ProviderCollectionException("Invalid token count for field " + field);
         }
 
         final var tokens = value.longValue();
 
         if (tokens < 0) {
-            throw new IllegalStateException("Negative token count for field " + field);
+            throw new ProviderCollectionException("Negative token count for field " + field);
         }
 
         return tokens;

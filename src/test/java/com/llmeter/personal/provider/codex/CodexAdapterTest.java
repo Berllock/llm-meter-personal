@@ -1,5 +1,6 @@
 package com.llmeter.personal.provider.codex;
 
+import com.llmeter.personal.provider.ProviderCollectionException;
 import com.llmeter.personal.provider.domain.ProviderType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,7 +11,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class CodexAdapterTest {
 
+    // Verifies that the expected token metrics can be read from a JSON event.
     @Test
     void shouldReadTokenCountsFromEvent() {
         final var line = """
@@ -53,6 +54,7 @@ public class CodexAdapterTest {
         assertEquals(20L, tokenUsage.path("cached_input_tokens").asLong());
     }
 
+    // Verifies that the final token usage event supplies the session snapshot.
     @Test
     void shouldReturnUsageFromLastSessionEvent() throws Exception {
         final var resource = Objects.requireNonNull(
@@ -70,23 +72,26 @@ public class CodexAdapterTest {
         assertEquals(Long.valueOf(30L), result.cachedTokens());
     }
 
+    // Verifies that a session without usage reports a collection failure.
     @Test
     void shouldRejectSessionWithoutTokenCounts(@TempDir final Path directory) throws IOException {
         final var file = Files.createFile(directory.resolve("empty.jsonl"));
         final var adapter = new CodexAdapter(file);
 
-        assertThrows(IllegalStateException.class, adapter::getUsage);
+        assertThrows(ProviderCollectionException.class, adapter::getUsage);
     }
 
+    // Verifies that a file read failure preserves its original cause.
     @Test
     void shouldPreserveCauseWhenSessionCannotBeRead(@TempDir final Path directory) {
         final var adapter = new CodexAdapter(directory.resolve("missing.jsonl"));
 
-        final var exception = assertThrows(UncheckedIOException.class, adapter::getUsage);
+        final var exception = assertThrows(ProviderCollectionException.class, adapter::getUsage);
 
         assertInstanceOf(NoSuchFileException.class, exception.getCause());
     }
 
+    // Verifies that unrelated events are skipped and unavailable metrics remain null.
     @Test
     void shouldSkipUnrelatedEventsAndPreserveUnavailableMetrics(@TempDir final Path directory)
             throws IOException {
@@ -106,6 +111,7 @@ public class CodexAdapterTest {
         assertNull(result.cachedTokens());
     }
 
+    // Verifies that negative token counts report a collection failure.
     @Test
     void shouldRejectNegativeTokenCounts(@TempDir final Path directory)
             throws IOException {
@@ -117,9 +123,10 @@ public class CodexAdapterTest {
 
         final var adapter = new CodexAdapter(file);
 
-        assertThrows(IllegalStateException.class, adapter::getUsage);
+        assertThrows(ProviderCollectionException.class, adapter::getUsage);
     }
 
+    // Verifies that text, fractional, and out-of-range counts identify the invalid field.
     @ParameterizedTest
     @CsvSource(textBlock = """
             input_tokens, "100"
@@ -143,11 +150,12 @@ public class CodexAdapterTest {
                 """.formatted(field, tokenValue));
         final var adapter = new CodexAdapter(file);
 
-        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+        final var exception = assertThrows(ProviderCollectionException.class, adapter::getUsage);
 
         assertEquals("Invalid token count for field " + field, exception.getMessage());
     }
 
+    // Verifies that zero and the maximum long value remain valid for every metric.
     @ParameterizedTest
     @ValueSource(longs = {0L, Long.MAX_VALUE})
     void shouldAcceptTokenCountsWithinLongRange(
@@ -167,6 +175,7 @@ public class CodexAdapterTest {
         assertEquals(Long.valueOf(tokens), result.cachedTokens());
     }
 
+    // Verifies that malformed JSON reports its line and preserves the parser failure.
     @Test
     void shouldRejectMalformedJson(@TempDir final Path directory) throws IOException {
         final var file = directory.resolve("session.jsonl");
@@ -175,12 +184,13 @@ public class CodexAdapterTest {
                 """);
         final var adapter = new CodexAdapter(file);
 
-        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+        final var exception = assertThrows(ProviderCollectionException.class, adapter::getUsage);
 
         assertEquals("Invalid JSON in Codex session at line 1", exception.getMessage());
         assertInstanceOf(JacksonException.class, exception.getCause());
     }
 
+    // Verifies that physical line numbers include blank lines before malformed JSON.
     @Test
     void shouldReportMalformedJsonLineAfterBlankLineAndValidUsage(@TempDir final Path directory)
             throws IOException {
@@ -192,7 +202,7 @@ public class CodexAdapterTest {
                 """);
         final var adapter = new CodexAdapter(file);
 
-        final var exception = assertThrows(IllegalStateException.class, adapter::getUsage);
+        final var exception = assertThrows(ProviderCollectionException.class, adapter::getUsage);
 
         assertEquals("Invalid JSON in Codex session at line 3", exception.getMessage());
         assertInstanceOf(JacksonException.class, exception.getCause());
