@@ -207,4 +207,66 @@ public class CodexAdapterTest {
         assertEquals("Invalid JSON in Codex session at line 3", exception.getMessage());
         assertInstanceOf(JacksonException.class, exception.getCause());
     }
+
+    // Verifies that an empty directory produces one Codex snapshot with zero counters.
+    @Test
+    void shouldCollectEmptyDirectory(@TempDir final Path directory) {
+        final var adapter = CodexAdapter.forDirectory(directory);
+
+        final var result = adapter.getUsage();
+
+        assertEquals(ProviderType.CODEX, result.provider());
+        assertEquals(Long.valueOf(0L), result.inputTokens());
+        assertEquals(Long.valueOf(0L), result.outputTokens());
+        assertEquals(Long.valueOf(0L), result.cachedTokens());
+    }
+
+    // Verifies that each collection discovers newly created session files rather than reusing a stale file list.
+    @Test
+    void shouldDiscoverNewSessionsOnEachCollection(@TempDir final Path directory) throws IOException {
+        Files.writeString(directory.resolve("first.jsonl"), """
+                {"type":"session_meta","payload":{"id":"session-a"}}
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":40,"cached_input_tokens":20}}}}
+                """);
+        final var adapter = CodexAdapter.forDirectory(directory);
+        final var firstResult = adapter.getUsage();
+        Files.writeString(directory.resolve("second.jsonl"), """
+                {"type":"session_meta","payload":{"id":"session-b"}}
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"output_tokens":60,"cached_input_tokens":30}}}}
+                """);
+
+        final var secondResult = adapter.getUsage();
+
+        assertEquals(Long.valueOf(100L), firstResult.inputTokens());
+        assertEquals(Long.valueOf(300L), secondResult.inputTokens());
+        assertEquals(Long.valueOf(100L), secondResult.outputTokens());
+        assertEquals(Long.valueOf(50L), secondResult.cachedTokens());
+    }
+
+    // Verifies that directory collection rejects related sessions instead of silently omitting their usage.
+    @Test
+    void shouldRejectRelatedSessionsInDirectory(@TempDir final Path directory) throws IOException {
+        Files.writeString(directory.resolve("session.jsonl"), """
+                {"type":"session_meta","payload":{"id":"child","parent_thread_id":"parent"}}
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100}}}}
+                """);
+        final var adapter = CodexAdapter.forDirectory(directory);
+
+        assertThrows(ProviderCollectionException.class, adapter::getUsage);
+    }
+
+    // Verifies that a malformed file aborts directory collection even when another session can be read.
+    @Test
+    void shouldAbortDirectoryCollectionWhenOneFileIsMalformed(@TempDir final Path directory) throws IOException {
+        Files.writeString(directory.resolve("a-valid.jsonl"), """
+                {"type":"session_meta","payload":{"id":"session-a"}}
+                {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100}}}}
+                """);
+        Files.writeString(directory.resolve("z-malformed.jsonl"), "{\"payload\":");
+        final var adapter = CodexAdapter.forDirectory(directory);
+
+        final var exception = assertThrows(ProviderCollectionException.class, adapter::getUsage);
+
+        assertInstanceOf(JacksonException.class, exception.getCause());
+    }
 }
