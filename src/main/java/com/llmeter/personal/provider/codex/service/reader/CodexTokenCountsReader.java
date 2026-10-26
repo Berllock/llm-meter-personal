@@ -1,7 +1,9 @@
 package com.llmeter.personal.provider.codex.service.reader;
 
 import com.llmeter.personal.provider.codex.domain.CodexTokenCounts;
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
+
 import tools.jackson.databind.JsonNode;
 
 final class CodexTokenCountsReader {
@@ -23,11 +25,15 @@ final class CodexTokenCountsReader {
             return null;
         }
         if (!value.isIntegralNumber() || !value.canConvertToLong()) {
-            throw new ProviderCollectionException("Invalid token count for field " + field);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.INVALID_METRICS, "Invalid token count for field " + field
+            );
         }
         final var tokens = value.longValue();
         if (tokens < 0) {
-            throw new ProviderCollectionException("Negative token count for field " + field);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.INVALID_METRICS, "Negative token count for field " + field
+            );
         }
         return tokens;
     }

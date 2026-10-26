@@ -1,5 +1,6 @@
 package com.llmeter.personal.provider.codex.domain;
 
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
@@ -42,7 +43,9 @@ public record CodexTokenCounts(Long input, Long output, Long cached) {
         try {
             return new CodexTokenCounts(sum(input, other.input), sum(output, other.output), sum(cached, other.cached));
         } catch (final ArithmeticException e) {
-            throw new ProviderCollectionException("Codex daily token total exceeds long range", e);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.OVERFLOW, "Codex daily token total exceeds long range", e
+            );
         }
     }
 

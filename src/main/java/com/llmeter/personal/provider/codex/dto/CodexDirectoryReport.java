@@ -11,9 +11,12 @@ public record CodexDirectoryReport(
         int attributedRelatedSessions,
         int unidentifiedSessions,
         UsageSnapshot usage,
-        List<String> issues
+        List<String> issues,
+        int processableFiles,
+        List<CodexCollectionIssue> diagnostics
 ) {
     public CodexDirectoryReport {
         issues = List.copyOf(issues);
+        diagnostics = List.copyOf(diagnostics);
     }
 }

@@ -1,5 +1,6 @@
 package com.llmeter.personal.provider.codex.service.reader;
 
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 
 import java.io.IOException;
@@ -15,7 +16,9 @@ public class CodexSessionFiles {
         try {
             final var attributes = Files.readAttributes(directory, BasicFileAttributes.class);
             if (!attributes.isDirectory()) {
-                throw new ProviderCollectionException("Codex sessions path must be a directory");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.READ_FAILURE, "Codex sessions path must be a directory"
+                );
             }
 
             try (final var paths = Files.walk(directory)) {
@@ -26,9 +29,13 @@ public class CodexSessionFiles {
                         .toList();
             }
         } catch (final IOException e) {
-            throw new ProviderCollectionException("Could not discover Codex session files", e);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.READ_FAILURE, "Could not discover Codex session files", e
+            );
         } catch (final UncheckedIOException e) {
-            throw new ProviderCollectionException("Could not discover Codex session files", e.getCause());
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.READ_FAILURE, "Could not discover Codex session files", e.getCause()
+            );
         }
     }
 }

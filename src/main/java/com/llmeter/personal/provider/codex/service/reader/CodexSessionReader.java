@@ -2,7 +2,9 @@ package com.llmeter.personal.provider.codex.service.reader;
 
 import com.llmeter.personal.provider.codex.domain.CodexSessionUsage;
 import com.llmeter.personal.provider.codex.dto.CodexDailySessionUsage;
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
+
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -50,7 +52,7 @@ public class CodexSessionReader {
                     event = mapper.readTree(line);
                 } catch (final JacksonException e) {
                     throw new ProviderCollectionException(
-                            "Invalid JSON in Codex session at line " + lineNumber, e
+                            ProviderCollectionFailure.INVALID_JSON, "Invalid JSON in Codex session at line " + lineNumber, e
                     );
                 }
                 final var payload = event.path("payload");
@@ -104,7 +106,9 @@ public class CodexSessionReader {
             }
 
             if (lastTokenUsage == null) {
-                throw new ProviderCollectionException("No token count found in session file");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.NO_TOKEN_COUNT, "No token count found in session file"
+                );
             }
 
             final var collectedAt = Instant.now();
@@ -112,14 +116,18 @@ public class CodexSessionReader {
             final var attributableUsage = attributor == null ? null : attributor.attributedUsage(collectedAt);
             return new CodexSessionUsage(sessionId, parentThreadId, forkedFromId, usage, attributableUsage);
         } catch (final IOException e) {
-            throw new ProviderCollectionException("Could not read the Codex session", e);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.READ_FAILURE, "Could not read the Codex session", e
+            );
         }
 
     }
 
     private String mergeIdentifier(final String previous, final String candidate, final String field) {
         if (previous != null && candidate != null && !previous.equals(candidate)) {
-            throw new ProviderCollectionException("Conflicting session identifiers for field " + field);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.CONFLICTING_DATA, "Conflicting session identifiers for field " + field
+            );
         }
         return candidate != null ? candidate : previous;
     }
@@ -130,7 +138,9 @@ public class CodexSessionReader {
             return null;
         }
         if (!value.isString() || value.stringValue().isBlank()) {
-            throw new ProviderCollectionException("Invalid session identifier for field " + field);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.INVALID_IDENTITY, "Invalid session identifier for field " + field
+            );
         }
         return value.stringValue();
     }

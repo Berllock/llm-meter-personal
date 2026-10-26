@@ -1,5 +1,6 @@
 package com.llmeter.personal.provider;
 
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
@@ -17,7 +18,9 @@ public interface LlmProviderAdapter {
     UsageSnapshot getUsage();
 
     default List<DailyUsage> getDailyUsage(final UsagePeriod period) {
-        throw new ProviderCollectionException("Daily usage is unavailable for this provider");
+        throw new ProviderCollectionException(
+                ProviderCollectionFailure.UNSUPPORTED_HISTORY, "Daily usage is unavailable for this provider"
+        );
     }
 
     Optional<QuotaSnapshot> getQuota();

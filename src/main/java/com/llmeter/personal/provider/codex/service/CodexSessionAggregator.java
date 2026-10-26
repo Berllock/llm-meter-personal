@@ -1,6 +1,7 @@
 package com.llmeter.personal.provider.codex.service;
 
 import com.llmeter.personal.provider.codex.domain.CodexSessionUsage;
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
@@ -19,14 +20,20 @@ public class CodexSessionAggregator {
         final Map<String, CodexSessionUsage> uniqueSessions = new LinkedHashMap<>();
         for (final var session : sessions) {
             if (session.sessionId() == null || session.sessionId().isBlank()) {
-                throw new ProviderCollectionException("Cannot aggregate a session without an identifier");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.INVALID_IDENTITY, "Cannot aggregate a session without an identifier"
+                );
             }
             if (session.usage().provider() != ProviderType.CODEX) {
-                throw new ProviderCollectionException("Cannot aggregate usage from another provider as Codex");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.INVALID_METRICS, "Cannot aggregate usage from another provider as Codex"
+                );
             }
             final var collectible = collectibleUsage(session);
             if (collectible.provider() != ProviderType.CODEX) {
-                throw new ProviderCollectionException("Cannot aggregate usage from another provider as Codex");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.INVALID_METRICS, "Cannot aggregate usage from another provider as Codex"
+                );
             }
 
             final var previous = uniqueSessions.putIfAbsent(session.sessionId(), session);
@@ -34,7 +41,9 @@ public class CodexSessionAggregator {
                     || !hasSameMetrics(collectibleUsage(previous), collectible)
                     || !Objects.equals(previous.parentThreadId(), session.parentThreadId())
                     || !Objects.equals(previous.forkedFromId(), session.forkedFromId()))) {
-                throw new ProviderCollectionException("Conflicting usage for the same Codex session");
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.CONFLICTING_DATA, "Conflicting usage for the same Codex session"
+                );
             }
         }
 
@@ -54,7 +63,7 @@ public class CodexSessionAggregator {
         }
         if (session.attributableUsage() == null) {
             throw new ProviderCollectionException(
-                    "Related Codex sessions require inherited usage attribution before aggregation"
+                    ProviderCollectionFailure.UNSUPPORTED_HISTORY, "Related Codex sessions require inherited usage attribution before aggregation"
             );
         }
         return session.attributableUsage();
@@ -80,12 +89,16 @@ public class CodexSessionAggregator {
                 continue;
             }
             if (tokens < 0) {
-                throw new ProviderCollectionException("Negative token count for field " + field);
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.INVALID_METRICS, "Negative token count for field " + field
+                );
             }
             try {
                 total = Math.addExact(total, tokens);
             } catch (final ArithmeticException e) {
-                throw new ProviderCollectionException("Codex token total exceeds long range for field " + field, e);
+                throw new ProviderCollectionException(
+                        ProviderCollectionFailure.OVERFLOW, "Codex token total exceeds long range for field " + field, e
+                );
             }
         }
         return complete ? Long.valueOf(total) : null;

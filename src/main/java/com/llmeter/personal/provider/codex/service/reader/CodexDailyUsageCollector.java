@@ -1,7 +1,9 @@
 package com.llmeter.personal.provider.codex.service.reader;
 
 import com.llmeter.personal.provider.codex.domain.CodexTokenCounts;
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
+
 import tools.jackson.databind.JsonNode;
 
 import java.time.DateTimeException;
@@ -31,7 +33,10 @@ final class CodexDailyUsageCollector {
 
     void start(final JsonNode metadata, final boolean hasParent, final boolean hasFork) {
         final var mode = metadata.path("history_mode");
-        if (started || !mode.isString() || !"paginated".equals(mode.stringValue())
+        if (started) {
+            throw unavailable(ProviderCollectionFailure.CONFLICTING_DATA);
+        }
+        if (!mode.isString() || !"paginated".equals(mode.stringValue())
                 || metadata.hasNonNull("history_base")) {
             throw unavailable();
         }
@@ -50,14 +55,33 @@ final class CodexDailyUsageCollector {
 
     void observe(final JsonNode event, final JsonNode info, final CodexUsageAttributor attributor) {
         if (!started) {
-            throw unavailable();
+            throw unavailable(ProviderCollectionFailure.INVALID_SEQUENCE);
         }
         final var ordinalNode = event.path("ordinal");
         if (!ordinalNode.isIntegralNumber() || !ordinalNode.canConvertToLong() || ordinalNode.longValue() < 0) {
-            throw unavailable();
+            throw unavailable(ProviderCollectionFailure.INVALID_SEQUENCE);
         }
         final long ordinal = ordinalNode.longValue();
         final var total = CodexTokenCountsReader.read(info.path("total_token_usage"));
+        final boolean inherited = related && boundary != null && ordinal < boundary;
+        final Instant timestamp;
+        if (inherited) {
+            timestamp = null;
+        } else {
+            timestamp = readTimestamp(event);
+            if (previousOrdinal != null && ordinal <= previousOrdinal) {
+                if (ordinal == previousOrdinal && total.equals(previousRaw) && timestamp.equals(previousTime)) {
+                    return;
+                }
+                throw unavailable(ProviderCollectionFailure.INVALID_SEQUENCE);
+            }
+            if (previousTime != null && timestamp.isBefore(previousTime)) {
+                throw unavailable(ProviderCollectionFailure.INVALID_SEQUENCE);
+            }
+            if (total.decreasesFrom(lastKnown)) {
+                throw unavailable(ProviderCollectionFailure.COUNTER_RESET);
+            }
+        }
         final CodexTokenCounts contribution;
         if (related) {
             final var attributed = attributor.attributedUsage(Instant.EPOCH);
@@ -66,7 +90,7 @@ final class CodexDailyUsageCollector {
             }
             contribution = new CodexTokenCounts(attributed.inputTokens(), attributed.outputTokens(),
                     attributed.cachedTokens());
-            if (boundary != null && ordinal < boundary) {
+            if (inherited) {
                 // Inherited history establishes the baseline, never a day of child consumption.
                 previousContribution = contribution;
                 previousRaw = total;
@@ -78,25 +102,12 @@ final class CodexDailyUsageCollector {
             contribution = total;
         }
 
-        final var timestamp = readTimestamp(event);
-        if (previousOrdinal != null && ordinal <= previousOrdinal) {
-            if (ordinal == previousOrdinal && total.equals(previousRaw) && timestamp.equals(previousTime)) {
-                return;
-            }
-            throw unavailable();
-        }
-        if (previousTime != null && timestamp.isBefore(previousTime)) {
-            throw unavailable();
-        }
         if (previousContribution == null) {
             if (!related && (!info.path("last_token_usage").isObject()
                     || !total.hasSameKnownMetrics(CodexTokenCountsReader.read(info.path("last_token_usage"))))) {
                 throw unavailable();
             }
             previousContribution = contribution.zeroForKnownMetrics();
-        }
-        if (total.decreasesFrom(lastKnown)) {
-            throw unavailable();
         }
         // Once a component disappears its subsequent timing cannot be reconstructed reliably.
         final var knownContribution = contribution.retainKnownMetrics(previousContribution);
@@ -118,16 +129,22 @@ final class CodexDailyUsageCollector {
     private Instant readTimestamp(final JsonNode event) {
         final var timestamp = event.path("timestamp");
         if (!timestamp.isString()) {
-            throw unavailable();
+            throw unavailable(ProviderCollectionFailure.INVALID_TIMESTAMP);
         }
         try {
             return Instant.parse(timestamp.stringValue());
         } catch (final DateTimeException e) {
-            throw new ProviderCollectionException("Invalid Codex token event timestamp", e);
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.INVALID_TIMESTAMP, "Invalid Codex token event timestamp", e
+            );
         }
     }
 
     private ProviderCollectionException unavailable() {
-        return new ProviderCollectionException("Codex history cannot be attributed to daily usage safely");
+        return unavailable(ProviderCollectionFailure.UNSUPPORTED_HISTORY);
+    }
+
+    private ProviderCollectionException unavailable(final ProviderCollectionFailure failure) {
+        return new ProviderCollectionException(failure, "Codex history cannot be attributed to daily usage safely");
     }
 }
