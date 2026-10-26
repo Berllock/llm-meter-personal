@@ -21,6 +21,7 @@ public class CodexUsageExample {
             System.out.println("Discovered files: " + report.discoveredFiles());
             System.out.println("Readable files: " + report.readableFiles());
             System.out.println("Related sessions: " + report.relatedSessions());
+            System.out.println("Attributed related sessions: " + report.attributedRelatedSessions());
             System.out.println("Unidentified sessions: " + report.unidentifiedSessions());
             for (final var issue : report.issues()) {
                 System.out.println("Issue: " + issue);

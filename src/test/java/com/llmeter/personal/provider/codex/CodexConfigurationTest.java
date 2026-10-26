@@ -103,6 +103,31 @@ class CodexConfigurationTest {
                 });
     }
 
+    // Verifies that the configured HTTP endpoint includes only a child's own usage and deduplicates its copied file.
+    @Test
+    void shouldExposeAttributedChildUsageThroughHttp(@TempDir final Path directory) throws Exception {
+        for (final var name : new String[]{"parent", "inherited-child"}) {
+            final var resource = Objects.requireNonNull(
+                    getClass().getResource("/codex/attribution/" + name + ".jsonl"), "Test resource not found"
+            );
+            Files.copy(Path.of(resource.toURI()), directory.resolve(name + ".jsonl"));
+        }
+        Files.copy(directory.resolve("inherited-child.jsonl"), directory.resolve("copy.jsonl"));
+
+        contextRunner.withPropertyValues("llm-meter.codex.sessions-directory=" + directory).run((final var context) -> {
+            assertThat(context).hasNotFailed().hasSingleBean(LlmProviderAdapter.class);
+            final var mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(UsageController.class))
+                    .setControllerAdvice(context.getBean(UsageExceptionHandler.class)).build();
+
+            mockMvc.perform(get("/api/usage"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].inputTokens").value(1100))
+                    .andExpect(jsonPath("$[0].outputTokens").value(110))
+                    .andExpect(jsonPath("$[0].cachedTokens").value(880));
+        });
+    }
+
     // Verifies that selecting both sources fails startup instead of registering two Codex adapters.
     @Test
     void shouldRejectSimultaneousFileAndDirectoryConfiguration(@TempDir final Path directory) {

@@ -1,8 +1,6 @@
 package com.llmeter.personal.provider.codex;
 
 import com.llmeter.personal.provider.ProviderCollectionException;
-import com.llmeter.personal.provider.domain.ProviderType;
-import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -24,6 +22,7 @@ public class CodexSessionReader {
             String parentThreadId = null;
             String forkedFromId = null;
             JsonNode lastTokenUsage = null;
+            CodexUsageAttributor attributor = null;
             String line;
             long lineNumber = 0;
 
@@ -48,9 +47,23 @@ public class CodexSessionReader {
                     parentThreadId = mergeIdentifier(
                             parentThreadId, readIdentifier(payload, "parent_thread_id"), "parent_thread_id"
                     );
+                    parentThreadId = mergeIdentifier(
+                            parentThreadId,
+                            readIdentifier(payload.path("source").path("subagent").path("thread_spawn"),
+                                    "parent_thread_id"),
+                            "parent_thread_id"
+                    );
                     forkedFromId = mergeIdentifier(
                             forkedFromId, readIdentifier(payload, "forked_from_id"), "forked_from_id"
                     );
+                    if (attributor == null) {
+                        attributor = new CodexUsageAttributor(payload, parentThreadId != null, forkedFromId != null);
+                        if (lastTokenUsage != null) {
+                            attributor.invalidate();
+                        }
+                    } else {
+                        attributor.invalidate();
+                    }
                     continue;
                 }
 
@@ -65,6 +78,9 @@ public class CodexSessionReader {
 
                 if (tokenUsage.isObject()) {
                     lastTokenUsage = tokenUsage;
+                    if (attributor != null) {
+                        attributor.observe(event, payload.path("info"));
+                    }
                 }
             }
 
@@ -72,14 +88,10 @@ public class CodexSessionReader {
                 throw new ProviderCollectionException("No token count found in session file");
             }
 
-            final var usage = new UsageSnapshot(
-                    ProviderType.CODEX,
-                    readTokens(lastTokenUsage, "input_tokens"),
-                    readTokens(lastTokenUsage, "output_tokens"),
-                    readTokens(lastTokenUsage, "cached_input_tokens"),
-                    Instant.now()
-            );
-            return new CodexSessionUsage(sessionId, parentThreadId, forkedFromId, usage);
+            final var collectedAt = Instant.now();
+            final var usage = CodexTokenCounts.read(lastTokenUsage).snapshot(collectedAt);
+            final var attributableUsage = attributor == null ? null : attributor.attributedUsage(collectedAt);
+            return new CodexSessionUsage(sessionId, parentThreadId, forkedFromId, usage, attributableUsage);
         } catch (final IOException e) {
             throw new ProviderCollectionException("Could not read the Codex session", e);
         }
@@ -104,23 +116,4 @@ public class CodexSessionReader {
         return value.stringValue();
     }
 
-    private Long readTokens(final JsonNode tokenUsage, final String field) {
-        final var value = tokenUsage.path(field);
-
-        if (value.isMissingNode() || value.isNull()) {
-            return null;
-        }
-
-        if (!value.isIntegralNumber() || !value.canConvertToLong()) {
-            throw new ProviderCollectionException("Invalid token count for field " + field);
-        }
-
-        final var tokens = value.longValue();
-
-        if (tokens < 0) {
-            throw new ProviderCollectionException("Negative token count for field " + field);
-        }
-
-        return tokens;
-    }
 }

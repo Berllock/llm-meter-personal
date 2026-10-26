@@ -1,0 +1,2 @@
+{"ordinal":0,"type":"session_meta","payload":{"id":"external-history-child","history_mode":"paginated","parent_thread_id":"parent","history_base":{"thread_id":"parent","end_ordinal_exclusive":20}}}
+{"ordinal":21,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":650,"output_tokens":65,"cached_input_tokens":440},"last_token_usage":{"input_tokens":50,"output_tokens":5,"cached_input_tokens":40}}}}

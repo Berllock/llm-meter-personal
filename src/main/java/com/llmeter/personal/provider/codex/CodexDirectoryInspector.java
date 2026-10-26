@@ -18,6 +18,7 @@ public class CodexDirectoryInspector {
         final List<CodexSessionUsage> sessions = new ArrayList<>();
         final List<String> issues = new ArrayList<>();
         int relatedSessions = 0;
+        int attributedRelatedSessions = 0;
         int unidentifiedSessions = 0;
         int fileNumber = 0;
 
@@ -28,6 +29,9 @@ public class CodexDirectoryInspector {
                 sessions.add(session);
                 if (session.parentThreadId() != null || session.forkedFromId() != null) {
                     relatedSessions++;
+                    if (session.attributableUsage() != null) {
+                        attributedRelatedSessions++;
+                    }
                 }
                 if (session.sessionId() == null || session.sessionId().isBlank()) {
                     unidentifiedSessions++;
@@ -47,7 +51,8 @@ public class CodexDirectoryInspector {
         }
 
         return new CodexDirectoryReport(
-                files.size(), sessions.size(), relatedSessions, unidentifiedSessions, usage, issues
+                files.size(), sessions.size(), relatedSessions, attributedRelatedSessions,
+                unidentifiedSessions, usage, issues
         );
     }
 }

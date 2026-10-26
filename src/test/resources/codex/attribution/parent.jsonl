@@ -1,0 +1,2 @@
+{"ordinal":0,"type":"session_meta","payload":{"id":"parent","history_mode":"paginated"}}
+{"ordinal":2,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"output_tokens":100,"cached_input_tokens":800},"last_token_usage":{"input_tokens":1000,"output_tokens":100,"cached_input_tokens":800}}}}

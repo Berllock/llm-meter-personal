@@ -23,14 +23,16 @@ public class CodexSessionAggregator {
             if (session.usage().provider() != ProviderType.CODEX) {
                 throw new ProviderCollectionException("Cannot aggregate usage from another provider as Codex");
             }
-            if (session.parentThreadId() != null || session.forkedFromId() != null) {
-                throw new ProviderCollectionException(
-                        "Related Codex sessions require inherited usage attribution before aggregation"
-                );
+            final var collectible = collectibleUsage(session);
+            if (collectible.provider() != ProviderType.CODEX) {
+                throw new ProviderCollectionException("Cannot aggregate usage from another provider as Codex");
             }
 
             final var previous = uniqueSessions.putIfAbsent(session.sessionId(), session);
-            if (previous != null && !hasSameMetrics(previous.usage(), session.usage())) {
+            if (previous != null && (!hasSameMetrics(previous.usage(), session.usage())
+                    || !hasSameMetrics(collectibleUsage(previous), collectible)
+                    || !Objects.equals(previous.parentThreadId(), session.parentThreadId())
+                    || !Objects.equals(previous.forkedFromId(), session.forkedFromId()))) {
                 throw new ProviderCollectionException("Conflicting usage for the same Codex session");
             }
         }
@@ -43,6 +45,18 @@ public class CodexSessionAggregator {
                 sumTokens(unique, UsageSnapshot::cachedTokens, "cached_input_tokens"),
                 Instant.now()
         );
+    }
+
+    private UsageSnapshot collectibleUsage(final CodexSessionUsage session) {
+        if (session.parentThreadId() == null && session.forkedFromId() == null) {
+            return session.usage();
+        }
+        if (session.attributableUsage() == null) {
+            throw new ProviderCollectionException(
+                    "Related Codex sessions require inherited usage attribution before aggregation"
+            );
+        }
+        return session.attributableUsage();
     }
 
     private boolean hasSameMetrics(final UsageSnapshot first, final UsageSnapshot second) {
@@ -59,7 +73,7 @@ public class CodexSessionAggregator {
         long total = 0;
         boolean complete = true;
         for (final var session : sessions) {
-            final var tokens = metric.apply(session.usage());
+            final var tokens = metric.apply(collectibleUsage(session));
             if (tokens == null) {
                 complete = false;
                 continue;
