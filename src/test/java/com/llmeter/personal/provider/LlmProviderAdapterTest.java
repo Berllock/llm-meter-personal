@@ -1,7 +1,7 @@
 package com.llmeter.personal.provider;
 
 import com.llmeter.personal.provider.domain.ProviderType;
-import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
+import com.llmeter.personal.usage.dto.UsageSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

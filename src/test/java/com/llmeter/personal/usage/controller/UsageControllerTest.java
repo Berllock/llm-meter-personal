@@ -2,9 +2,9 @@ package com.llmeter.personal.usage.controller;
 
 import com.llmeter.personal.provider.FakeLlmProviderAdapter;
 import com.llmeter.personal.provider.LlmProviderAdapter;
-import com.llmeter.personal.provider.codex.CodexAdapter;
+import com.llmeter.personal.provider.codex.service.adapter.CodexAdapter;
 import com.llmeter.personal.provider.domain.ProviderType;
-import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
+import com.llmeter.personal.usage.dto.UsageSnapshot;
 import com.llmeter.personal.usage.service.UsageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

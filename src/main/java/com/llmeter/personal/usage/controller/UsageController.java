@@ -1,11 +1,20 @@
 package com.llmeter.personal.usage.controller;
 
-import com.llmeter.personal.usage.domain.dto.UsageSnapshot;
+import com.llmeter.personal.usage.domain.UsagePeriod;
+import com.llmeter.personal.usage.dto.DailyUsage;
+import com.llmeter.personal.usage.dto.UsageSnapshot;
 import com.llmeter.personal.usage.service.UsageService;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.DateTimeException;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @RestController
@@ -21,5 +30,20 @@ public class UsageController {
     @GetMapping
     public List<UsageSnapshot> getUsage() {
         return usageService.getUsage();
+    }
+
+    @GetMapping("/daily")
+    public List<DailyUsage> getDailyUsage(
+            @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) final LocalDate from,
+            @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) final LocalDate to,
+            @RequestParam(value = "zone", defaultValue = "UTC") final String zone
+    ) {
+        final UsagePeriod period;
+        try {
+            period = new UsagePeriod(from, to, ZoneId.of(zone));
+        } catch (final DateTimeException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid usage period or time zone");
+        }
+        return usageService.getDailyUsage(period);
     }
 }

@@ -1,6 +1,6 @@
 package com.llmeter.personal.usage.controller;
 
-import com.llmeter.personal.provider.ProviderCollectionException;
+import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
