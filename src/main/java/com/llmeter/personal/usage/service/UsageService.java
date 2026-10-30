@@ -3,6 +3,7 @@ package com.llmeter.personal.usage.service;
 import com.llmeter.personal.provider.LlmProviderAdapter;
 import com.llmeter.personal.usage.domain.UsagePeriod;
 import com.llmeter.personal.usage.dto.DailyUsage;
+import com.llmeter.personal.usage.dto.DailyUsageCollection;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +22,11 @@ public class UsageService {
         return adapters.stream()
                 .map(LlmProviderAdapter::getUsage)
                 .toList();
+    }
+
+    public DailyUsageCollection collectDailyUsage(final UsagePeriod period) {
+        return DailyUsageCollection.of(period, adapters.stream()
+                .map((final var adapter) -> adapter.getDailyUsageReport(period)).toList());
     }
 
     public List<DailyUsage> getDailyUsage(final UsagePeriod period) {

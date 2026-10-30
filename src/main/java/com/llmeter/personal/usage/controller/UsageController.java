@@ -2,6 +2,7 @@ package com.llmeter.personal.usage.controller;
 
 import com.llmeter.personal.usage.domain.UsagePeriod;
 import com.llmeter.personal.usage.dto.DailyUsage;
+import com.llmeter.personal.usage.dto.DailyUsageCollection;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
 import com.llmeter.personal.usage.service.UsageService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -38,12 +39,23 @@ public class UsageController {
             @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) final LocalDate to,
             @RequestParam(value = "zone", defaultValue = "UTC") final String zone
     ) {
-        final UsagePeriod period;
+        return usageService.getDailyUsage(period(from, to, zone));
+    }
+
+    @GetMapping("/daily/collection")
+    public DailyUsageCollection collectDailyUsage(
+            @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) final LocalDate from,
+            @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) final LocalDate to,
+            @RequestParam(value = "zone", defaultValue = "UTC") final String zone
+    ) {
+        return usageService.collectDailyUsage(period(from, to, zone));
+    }
+
+    private UsagePeriod period(final LocalDate from, final LocalDate to, final String zone) {
         try {
-            period = new UsagePeriod(from, to, ZoneId.of(zone));
+            return new UsagePeriod(from, to, ZoneId.of(zone));
         } catch (final DateTimeException | IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid usage period or time zone");
         }
-        return usageService.getDailyUsage(period);
     }
 }

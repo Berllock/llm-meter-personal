@@ -2,6 +2,7 @@ package com.llmeter.personal.provider.codex.service.reader;
 
 import com.llmeter.personal.provider.codex.domain.CodexSessionUsage;
 import com.llmeter.personal.provider.codex.dto.CodexDailySessionUsage;
+import com.llmeter.personal.provider.codex.dto.CodexDailyObservation;
 import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 
@@ -29,7 +30,21 @@ public class CodexSessionReader {
         return new CodexDailySessionUsage(session, collector.days());
     }
 
+    public CodexDailyObservation readDailyObservation(final Path sessionFile, final ZoneId zone) {
+        final var daily = new CodexDailyUsageCollector(zone);
+        final var result = readSession(sessionFile, daily, true);
+        return new CodexDailyObservation(result.sessionId(), result.parentThreadId(), result.forkedFromId(),
+                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days()));
+    }
+
     private CodexSessionUsage read(final Path sessionFile, final CodexDailyUsageCollector daily) {
+        return readSession(sessionFile, daily, false).session();
+    }
+
+    private record SessionRead(String sessionId, String parentThreadId, String forkedFromId, CodexSessionUsage session) {
+    }
+
+    private SessionRead readSession(final Path sessionFile, final CodexDailyUsageCollector daily, final boolean allowPending) {
 
         try (final var reader = Files.newBufferedReader(sessionFile)) {
 
@@ -40,6 +55,7 @@ public class CodexSessionReader {
             CodexUsageAttributor attributor = null;
             String line;
             long lineNumber = 0;
+            long eventNumber = 0;
 
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
@@ -55,7 +71,14 @@ public class CodexSessionReader {
                             ProviderCollectionFailure.INVALID_JSON, "Invalid JSON in Codex session at line " + lineNumber, e
                     );
                 }
+                eventNumber++;
                 final var payload = event.path("payload");
+                if (allowPending && eventNumber == 1 && (!"session_meta".equals(event.path("type").asString())
+                        || !event.path("ordinal").isIntegralNumber() || !event.path("ordinal").canConvertToLong()
+                        || event.path("ordinal").longValue() != 0)) {
+                    throw new ProviderCollectionException(ProviderCollectionFailure.INVALID_SEQUENCE,
+                            "A leading session header is required for coverage");
+                }
 
                 if (event.path("type").equals(mapper.valueToTree("session_meta"))) {
                     sessionId = mergeIdentifier(sessionId, readIdentifier(payload, "id"), "id");
@@ -79,6 +102,11 @@ public class CodexSessionReader {
                     } else {
                         attributor.invalidate();
                     }
+                    if (allowPending && forkedFromId != null && (parentThreadId == null
+                            || !payload.hasNonNull("subagent_history_start_ordinal"))) {
+                        throw new ProviderCollectionException(ProviderCollectionFailure.UNSUPPORTED_HISTORY,
+                                "Unsupported fork history");
+                    }
                     if (daily != null) {
                         daily.start(payload, parentThreadId != null, forkedFromId != null);
                     }
@@ -94,6 +122,10 @@ public class CodexSessionReader {
                         .path("info")
                         .path("total_token_usage");
 
+                if (allowPending && !tokenUsage.isObject()) {
+                    throw new ProviderCollectionException(ProviderCollectionFailure.INVALID_METRICS,
+                            "A token event must contain valid counters");
+                }
                 if (tokenUsage.isObject()) {
                     lastTokenUsage = tokenUsage;
                     if (attributor != null) {
@@ -105,6 +137,13 @@ public class CodexSessionReader {
                 }
             }
 
+            if (allowPending && sessionId == null) {
+                throw new ProviderCollectionException(ProviderCollectionFailure.INVALID_IDENTITY,
+                        "A session identity is required for coverage");
+            }
+            if (lastTokenUsage == null && allowPending) {
+                return new SessionRead(sessionId, parentThreadId, forkedFromId, null);
+            }
             if (lastTokenUsage == null) {
                 throw new ProviderCollectionException(
                         ProviderCollectionFailure.NO_TOKEN_COUNT, "No token count found in session file"
@@ -114,7 +153,8 @@ public class CodexSessionReader {
             final var collectedAt = Instant.now();
             final var usage = CodexTokenCountsReader.read(lastTokenUsage).snapshot(collectedAt);
             final var attributableUsage = attributor == null ? null : attributor.attributedUsage(collectedAt);
-            return new CodexSessionUsage(sessionId, parentThreadId, forkedFromId, usage, attributableUsage);
+            return new SessionRead(sessionId, parentThreadId, forkedFromId,
+                    new CodexSessionUsage(sessionId, parentThreadId, forkedFromId, usage, attributableUsage));
         } catch (final IOException e) {
             throw new ProviderCollectionException(
                     ProviderCollectionFailure.READ_FAILURE, "Could not read the Codex session", e

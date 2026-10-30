@@ -9,6 +9,8 @@ import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
 import com.llmeter.personal.usage.domain.UsagePeriod;
 import com.llmeter.personal.usage.dto.DailyUsage;
+import com.llmeter.personal.usage.dto.ProviderDailyUsage;
+import com.llmeter.personal.provider.codex.service.CodexDailyCoverageCollector;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
 
 import java.nio.file.Path;
@@ -56,6 +58,12 @@ public class CodexAdapter implements LlmProviderAdapter {
                 .map(sessionReader::read)
                 .toList();
         return sessionAggregator.aggregate(sessions);
+    }
+
+    @Override
+    public ProviderDailyUsage getDailyUsageReport(final UsagePeriod period) {
+        final var files = directoryMode ? sessionFiles.find(sourcePath) : List.of(sourcePath);
+        return new CodexDailyCoverageCollector().collect(files, period);
     }
 
     @Override

@@ -6,6 +6,7 @@ import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.usage.domain.UsagePeriod;
 import com.llmeter.personal.usage.dto.DailyUsage;
+import com.llmeter.personal.usage.dto.ProviderDailyUsage;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
 import com.llmeter.personal.usage.service.UsageService;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,6 +40,11 @@ class UsageDiagnosticPrivacyTest {
                 throw failure();
             }
 
+            @Override
+            public ProviderDailyUsage getDailyUsageReport(final UsagePeriod period) {
+                throw failure();
+            }
+
             private ProviderCollectionException failure() {
                 return new ProviderCollectionException(category, "PRIVATE_SESSION_CONTENT", new RuntimeException("PRIVATE_CAUSE"));
             }
@@ -46,7 +52,7 @@ class UsageDiagnosticPrivacyTest {
         final var http = MockMvcBuilders.standaloneSetup(new UsageController(new UsageService(List.of(adapter))))
                 .setControllerAdvice(new UsageExceptionHandler()).build();
 
-        for (final var path : List.of("/api/usage", "/api/usage/daily")) {
+        for (final var path : List.of("/api/usage", "/api/usage/daily", "/api/usage/daily/collection")) {
             http.perform(get(path).param("from", "2026-10-24").param("to", "2026-10-26"))
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(jsonPath("$.title").value("Usage collection unavailable"))
