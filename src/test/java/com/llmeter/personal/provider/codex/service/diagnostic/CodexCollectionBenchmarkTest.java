@@ -179,4 +179,29 @@ class CodexCollectionBenchmarkTest {
         assertThat(result.records().getLast().path("stableSuccessfulSamples").intValue()).isEqualTo(1);
     }
 
+    // Validates a warmed cache still reads and validates content while avoiding repeated JSON interpretation.
+    @Test void shouldReportHitsAndAvoidRepeatedParses() {
+        final var result = execute("--mode", "cached", "--files", "3", "--pending", "1", "--events", "2",
+                "--warmup", "1", "--iterations", "2");
+        assertThat(result.code()).isZero();
+        final var sample = result.records().get(1);
+        assertThat(sample.path("cacheHits").longValue()).isEqualTo(3);
+        assertThat(sample.path("parseAttempts").longValue()).isZero();
+        assertThat(sample.path("hashedBytes").longValue()).isGreaterThan(0);
+        assertThat(sample.path("cacheEntries").intValue()).isEqualTo(3);
+        assertThat(result.output()).doesNotContain("inputTokens", "sessionId", "/tmp/");
+    }
+
+    // Validates cached observations, pending transitions, and interrupted-write failures match full scans.
+    @ParameterizedTest @ValueSource(strings = {"static", "append", "partial-write"})
+    void shouldCompareCachedResultsAndFailuresWithFullScans(final String scenario) {
+        final var result = execute("--mode", "compare", "--scenario", scenario, "--files", "3", "--pending", "1",
+                "--events", "2", "--warmup", "1", "--iterations", "4");
+        assertThat(result.code()).isZero();
+        final var summary = result.records().getLast();
+        assertThat(summary.path("matchedComparisons").intValue()).isEqualTo(4);
+        assertThat(summary.path("mismatchedComparisons").intValue()).isZero();
+        assertThat(summary.path("inconclusiveComparisons").intValue()).isZero();
+    }
+
 }

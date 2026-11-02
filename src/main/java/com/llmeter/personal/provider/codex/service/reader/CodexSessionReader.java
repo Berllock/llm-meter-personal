@@ -11,6 +11,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.io.BufferedReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -37,6 +38,14 @@ public class CodexSessionReader {
                 result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days()));
     }
 
+    /** Reads a caller-owned stream so cached observations can be bound to the exact bytes parsed. */
+    public CodexDailyObservation readDailyObservation(final BufferedReader source, final ZoneId zone) {
+        final var daily = new CodexDailyUsageCollector(zone);
+        final var result = readSession(source, daily, true);
+        return new CodexDailyObservation(result.sessionId(), result.parentThreadId(), result.forkedFromId(),
+                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days()));
+    }
+
     private CodexSessionUsage read(final Path sessionFile, final CodexDailyUsageCollector daily) {
         return readSession(sessionFile, daily, false).session();
     }
@@ -47,7 +56,16 @@ public class CodexSessionReader {
     private SessionRead readSession(final Path sessionFile, final CodexDailyUsageCollector daily, final boolean allowPending) {
 
         try (final var reader = Files.newBufferedReader(sessionFile)) {
+            return readSession(reader, daily, allowPending);
+        } catch (final IOException e) {
+            throw new ProviderCollectionException(
+                    ProviderCollectionFailure.READ_FAILURE, "Could not read the Codex session", e);
+        }
+    }
 
+    private SessionRead readSession(final BufferedReader reader, final CodexDailyUsageCollector daily,
+                                    final boolean allowPending) {
+        try {
             String sessionId = null;
             String parentThreadId = null;
             String forkedFromId = null;

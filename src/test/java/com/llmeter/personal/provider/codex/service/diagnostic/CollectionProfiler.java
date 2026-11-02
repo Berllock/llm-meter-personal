@@ -2,6 +2,8 @@ package com.llmeter.personal.provider.codex.service.diagnostic;
 
 import com.llmeter.personal.provider.codex.dto.CodexDailyObservation;
 import com.llmeter.personal.provider.codex.service.CodexDailyCoverageCollector;
+import com.llmeter.personal.provider.codex.service.cache.CodexDailyObservationCache;
+import com.llmeter.personal.usage.dto.ProviderDailyUsage;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionFiles;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionReader;
 import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
@@ -18,19 +20,33 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /** Local diagnostic only: output deliberately has no usage, identities, or source paths. */
 final class CollectionProfiler {
+    enum Mode { FULL, CACHED, COMPARE }
     private final Consumer<Path> afterRead;
+    private final Mode mode;
+    private final CodexDailyObservationCache cache;
 
     CollectionProfiler() {
-        this((final var ignored) -> { });
+        this(Mode.FULL);
+    }
+
+    CollectionProfiler(final Mode mode) {
+        this(mode, (final var ignored) -> { });
     }
 
     CollectionProfiler(final Consumer<Path> afterRead) {
+        this(Mode.FULL, afterRead);
+    }
+
+    private CollectionProfiler(final Mode mode, final Consumer<Path> afterRead) {
         this.afterRead = afterRead;
+        this.mode = mode;
+        this.cache = mode == Mode.FULL ? null : new CodexDailyObservationCache();
     }
 
     record Sample(
@@ -39,12 +55,14 @@ final class CollectionProfiler {
             double discoveryMs, double inventoryMs, double readingMs, double aggregationMs, double verificationMs,
             double collectionWallMs, double measurementWallMs, Double processCpuMs,
             long heapBeforeBytes, long heapAfterBytes, Long rssBeforeBytes, Long rssAfterBytes,
-            Long gcCollections, Long gcTimeMs
+            Long gcCollections, Long gcTimeMs, String mode, Long cacheHits, long parseAttempts,
+            Long hashedBytes, Integer cacheEntries, Integer cacheDayBuckets, String comparison
     ) { }
 
     private record Fingerprint(long bytes, FileTime modified, Object key) { }
 
     Sample measure(final Path source, final UsagePeriod period, final int iteration) {
+        final var statisticsBefore = cache == null ? null : cache.statistics();
         final var resourcesBefore = Resources.capture();
         final long started = System.nanoTime();
         final var timings = new Timings();
@@ -53,6 +71,8 @@ final class CollectionProfiler {
         Long sourceBytes = null;
         Map<Path, Fingerprint> before = null;
         final int[] filesRead = {0};
+        final long[] parseAttempts = {0};
+        ProviderDailyUsage result = null;
         ProviderCollectionFailure failure = null;
         Boolean changed = null;
         try {
@@ -61,9 +81,15 @@ final class CollectionProfiler {
             before = timings.run(1, () -> snapshot(files));
             sourceBytes = before.values().stream().mapToLong(Fingerprint::bytes).reduce(0L, Math::addExact);
             final var observations = timings.run(2, () -> {
+                if (cache != null) {
+                    final var cachedObservations = cache.readAll(files, period.zone());
+                    files.forEach(afterRead);
+                    return cachedObservations;
+                }
                 final var reader = new CodexSessionReader();
                 final var results = new ArrayList<CodexDailyObservation>();
                 for (final var file : files) {
+                    parseAttempts[0]++;
                     results.add(reader.readDailyObservation(file, period.zone()));
                     filesRead[0]++;
                     afterRead.accept(file);
@@ -71,11 +97,19 @@ final class CollectionProfiler {
                 return results;
             });
             // Consume the result without logging or retaining any token values in the diagnostic report.
-            timings.run(3, () -> new CodexDailyCoverageCollector().aggregateObservations(observations, period));
+            result = timings.run(3, () -> new CodexDailyCoverageCollector().aggregateObservations(observations, period));
         } catch (final ProviderCollectionException e) {
             failure = e.failure();
         } catch (final RuntimeException e) {
             failure = ProviderCollectionFailure.UNKNOWN;
+        }
+        if (cache != null && filesDiscovered == null) {
+            cache.clear();
+        }
+        final var statisticsAfter = cache == null ? null : cache.statistics();
+        if (statisticsAfter != null) {
+            filesRead[0] = (int) (statisticsAfter.completedFiles() - statisticsBefore.completedFiles());
+            parseAttempts[0] = statisticsAfter.parseAttempts() - statisticsBefore.parseAttempts();
         }
         if (before != null) {
             try {
@@ -89,6 +123,8 @@ final class CollectionProfiler {
         final long elapsed = System.nanoTime() - started;
         final var resourcesAfter = Resources.capture();
         final var cpu = difference(resourcesBefore.cpuNanos(), resourcesAfter.cpuNanos());
+        final var comparison = mode != Mode.COMPARE ? "NOT_RUN" : !Boolean.FALSE.equals(changed)
+                ? "INCONCLUSIVE" : compare(source, period, before, result, failure);
         return new Sample("sample", iteration, failure == null ? "SUCCESS" : "FAILURE", failure,
                 filesDiscovered, filesRead[0], sourceBytes, changed,
                 millis(timings.nanos[0]), millis(timings.nanos[1]), millis(timings.nanos[2]),
@@ -97,7 +133,34 @@ final class CollectionProfiler {
                 cpu == null ? null : millis(cpu), resourcesBefore.heapBytes(), resourcesAfter.heapBytes(),
                 resourcesBefore.rssBytes(), resourcesAfter.rssBytes(),
                 difference(resourcesBefore.gcCount(), resourcesAfter.gcCount()),
-                difference(resourcesBefore.gcMillis(), resourcesAfter.gcMillis()));
+                difference(resourcesBefore.gcMillis(), resourcesAfter.gcMillis()), mode.name(),
+                statisticsAfter == null ? null : statisticsAfter.hits() - statisticsBefore.hits(), parseAttempts[0],
+                statisticsAfter == null ? null : statisticsAfter.hashedBytes() - statisticsBefore.hashedBytes(),
+                statisticsAfter == null ? null : statisticsAfter.entries(),
+                statisticsAfter == null ? null : statisticsAfter.dayBuckets(), comparison);
+    }
+
+    // Correctness-only reference work is outside all reported sample timing/resource deltas.
+    private static String compare(final Path source, final UsagePeriod period, final Map<Path, Fingerprint> before,
+                                  final ProviderDailyUsage actual, final ProviderCollectionFailure actualFailure) {
+        ProviderDailyUsage expected = null;
+        ProviderCollectionFailure expectedFailure = null;
+        final var finder = new CodexSessionFiles();
+        try {
+            expected = new CodexDailyCoverageCollector().collect(finder.find(source), period);
+        } catch (final ProviderCollectionException e) {
+            expectedFailure = e.failure();
+        } catch (final RuntimeException e) {
+            expectedFailure = ProviderCollectionFailure.UNKNOWN;
+        }
+        try {
+            if (!before.equals(snapshot(finder.find(source)))) {
+                return "INCONCLUSIVE";
+            }
+        } catch (final RuntimeException e) {
+            return "INCONCLUSIVE";
+        }
+        return actualFailure == expectedFailure && Objects.equals(actual, expected) ? "MATCH" : "MISMATCH";
     }
 
     private static Map<Path, Fingerprint> snapshot(final List<Path> files) {

@@ -15,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, help="Read-only local sessions directory; omit for generated synthetic data")
     parser.add_argument("--scenario", choices=("static", "append", "partial-write"), default="static")
+    parser.add_argument("--mode", choices=("full", "cached", "compare"), default="full")
     for name in ("files", "events", "pending", "payload-bytes"):
         parser.add_argument("--" + name, type=int, default=None)
     parser.add_argument("--warmup", type=int, default=2)
@@ -47,7 +48,7 @@ def main():
     command = [java, "-Xms128m", f"-Xmx{args.heap_mb}m", "-XX:+UseG1GC", f"-Dloader.main={MAIN}",
                f"-Dloader.path={ROOT / 'target/test-classes'}", "-cp", str(jars[0]),
                "org.springframework.boot.loader.launch.PropertiesLauncher"]
-    for name, value in (("scenario", args.scenario), ("warmup", args.warmup), ("iterations", args.iterations),
+    for name, value in (("scenario", args.scenario), ("mode", args.mode), ("warmup", args.warmup), ("iterations", args.iterations),
                         ("interval-ms", args.interval_ms), ("from", args.from_date), ("to", args.to_date), ("zone", args.zone)):
         command.extend(("--" + name, str(value)))
     if args.source:

@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.function.ToDoubleFunction;
 
@@ -49,15 +50,15 @@ public final class CodexCollectionBenchmark {
     private static void execute(final Options options, final Path source, final SyntheticWorkload workload,
                                 final PrintStream output) throws Exception {
         final var mapper = new JsonMapper();
-        output.println(mapper.writeValueAsString(new Header("environment", "collection-profile-v1",
-                workload == null ? "LOCAL" : "SYNTHETIC", options.scenario(),
+        output.println(mapper.writeValueAsString(new Header("environment", "collection-profile-v2",
+                workload == null ? "LOCAL" : "SYNTHETIC", options.scenario(), options.mode().name(),
                 System.getProperty("java.version"), System.getProperty("os.name"), System.getProperty("os.arch"),
                 Runtime.getRuntime().maxMemory(), Runtime.getRuntime().availableProcessors(),
                 options.warmup(), options.iterations(), options.intervalMs(),
                 options.period().from().toString(), options.period().to().toString(), options.period().zone().getId(),
                 workload == null ? null : options.files(), workload == null ? null : options.events(),
                 workload == null ? null : options.pending(), workload == null ? null : options.payloadBytes())));
-        final var profiler = new CollectionProfiler();
+        final var profiler = new CollectionProfiler(options.mode());
         for (int i = 0; i < options.warmup(); i++) {
             profiler.measure(source, options.period(), -1);
         }
@@ -76,7 +77,7 @@ public final class CodexCollectionBenchmark {
         output.println(mapper.writeValueAsString(summarize(samples)));
     }
 
-    record Header(String type, String schema, String sourceKind, String scenario, String javaVersion,
+    record Header(String type, String schema, String sourceKind, String scenario, String mode, String javaVersion,
                   String os, String architecture, long heapMaxBytes, int availableProcessors,
                   int warmup, int iterations, int intervalMs, String from, String to, String zone,
                   Integer syntheticFiles, Integer initialEventsPerObservedFile,
@@ -85,7 +86,8 @@ public final class CodexCollectionBenchmark {
     record Summary(String type, int samples, long successfulSamples, long failedSamples,
                    long changedSamples, int stableSuccessfulSamples, Double medianCollectionWallMs,
                    Double medianDiscoveryMs, Double medianReadingMs, Double medianAggregationMs,
-                   Double medianProcessCpuMs, Double maxCollectionWallMs) { }
+                   Double medianProcessCpuMs, Double maxCollectionWallMs,
+                   long matchedComparisons, long mismatchedComparisons, long inconclusiveComparisons) { }
 
     private static Summary summarize(final List<CollectionProfiler.Sample> samples) {
         final var stable = samples.stream().filter((final var sample) -> "SUCCESS".equals(sample.outcome())
@@ -98,7 +100,10 @@ public final class CodexCollectionBenchmark {
                 stable.size(), median(stable, CollectionProfiler.Sample::collectionWallMs),
                 median(stable, CollectionProfiler.Sample::discoveryMs), median(stable, CollectionProfiler.Sample::readingMs),
                 median(stable, CollectionProfiler.Sample::aggregationMs), median(cpu, (final var sample) -> sample.processCpuMs()),
-                stable.isEmpty() ? null : stable.stream().mapToDouble(CollectionProfiler.Sample::collectionWallMs).max().orElseThrow());
+                stable.isEmpty() ? null : stable.stream().mapToDouble(CollectionProfiler.Sample::collectionWallMs).max().orElseThrow(),
+                samples.stream().filter((final var sample) -> "MATCH".equals(sample.comparison())).count(),
+                samples.stream().filter((final var sample) -> "MISMATCH".equals(sample.comparison())).count(),
+                samples.stream().filter((final var sample) -> "INCONCLUSIVE".equals(sample.comparison())).count());
     }
 
     private static Double median(final List<CollectionProfiler.Sample> samples,
@@ -111,10 +116,10 @@ public final class CodexCollectionBenchmark {
         return values.length % 2 == 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle];
     }
 
-    private record Options(Path source, String scenario, int files, int events, int pending, int payloadBytes,
+    private record Options(Path source, String scenario, CollectionProfiler.Mode mode, int files, int events, int pending, int payloadBytes,
                            int warmup, int iterations, int intervalMs, UsagePeriod period) {
         static Options parse(final String[] args) {
-            final Set<String> allowed = Set.of("source", "scenario", "files", "events", "pending", "payload-bytes",
+            final Set<String> allowed = Set.of("source", "scenario", "mode", "files", "events", "pending", "payload-bytes",
                     "warmup", "iterations", "interval-ms", "from", "to", "zone");
             final var values = new HashMap<String, String>();
             for (int i = 0; i < args.length; i += 2) {
@@ -131,7 +136,8 @@ public final class CodexCollectionBenchmark {
                 throw new IllegalArgumentException("Local sources are read-only");
             }
             final int files = number(values, "files", 100, 1, 10_000);
-            return new Options(source, scenario, files,
+            return new Options(source, scenario,
+                    CollectionProfiler.Mode.valueOf(values.getOrDefault("mode", "full").toUpperCase(Locale.ROOT)), files,
                     number(values, "events", 100, 1, 10_000), number(values, "pending", Math.min(5, files - 1), 0, 10_000),
                     number(values, "payload-bytes", 1024, 0, 4096), number(values, "warmup", 2, 0, 100),
                     number(values, "iterations", 5, 1, 1000), number(values, "interval-ms", 0, 0, 60_000),

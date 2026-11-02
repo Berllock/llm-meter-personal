@@ -1,6 +1,8 @@
 package com.llmeter.personal.provider.codex.service.adapter;
 
 import com.llmeter.personal.provider.LlmProviderAdapter;
+import com.llmeter.personal.provider.codex.service.cache.CodexDailyObservationCache;
+import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionFiles;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionReader;
 import com.llmeter.personal.provider.codex.service.CodexDailyUsageAggregator;
@@ -24,6 +26,7 @@ public class CodexAdapter implements LlmProviderAdapter {
     private final CodexSessionReader sessionReader = new CodexSessionReader();
     private final CodexSessionFiles sessionFiles = new CodexSessionFiles();
     private final CodexSessionAggregator sessionAggregator = new CodexSessionAggregator();
+    private final CodexDailyObservationCache observationCache = new CodexDailyObservationCache();
 
     public CodexAdapter(final Path sessionFile) {
         this(sessionFile, false);
@@ -62,8 +65,15 @@ public class CodexAdapter implements LlmProviderAdapter {
 
     @Override
     public ProviderDailyUsage getDailyUsageReport(final UsagePeriod period) {
-        final var files = directoryMode ? sessionFiles.find(sourcePath) : List.of(sourcePath);
-        return new CodexDailyCoverageCollector().collect(files, period);
+        final List<Path> files;
+        try {
+            files = directoryMode ? sessionFiles.find(sourcePath) : List.of(sourcePath);
+        } catch (final ProviderCollectionException e) {
+            observationCache.clear();
+            throw e;
+        }
+        return new CodexDailyCoverageCollector().aggregateObservations(
+                observationCache.readAll(files, period.zone()), period);
     }
 
     @Override
