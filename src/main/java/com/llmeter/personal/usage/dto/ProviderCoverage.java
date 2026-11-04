@@ -4,7 +4,10 @@ import com.llmeter.personal.provider.domain.ProviderType;
 import java.util.Objects;
 
 /** Counts identified source sessions, never a percentage of token coverage or a period attribution. */
-public record ProviderCoverage(ProviderType provider, int observedSessions, int pendingSessions) {
+public record ProviderCoverage(ProviderType provider, int observedSessions, int pendingSessions, boolean tokenCountsAvailable) {
+    public ProviderCoverage(final ProviderType provider, final int observedSessions, final int pendingSessions) {
+        this(provider, observedSessions, pendingSessions, true);
+    }
     public ProviderCoverage {
         Objects.requireNonNull(provider);
         if (observedSessions < 0 || pendingSessions < 0) {

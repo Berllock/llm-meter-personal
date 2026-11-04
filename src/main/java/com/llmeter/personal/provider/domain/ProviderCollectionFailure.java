@@ -3,6 +3,7 @@ package com.llmeter.personal.provider.domain;
 public enum ProviderCollectionFailure {
     READ_FAILURE("The source could not be read"),
     NO_TOKEN_COUNT("No token count was found in the session"),
+    NO_USAGE_RECORD("No usage record was found in the session"),
     INVALID_JSON("The session contains invalid JSON"),
     INVALID_METRICS("The session contains invalid token counts"),
     INVALID_IDENTITY("The session has no valid identity"),
