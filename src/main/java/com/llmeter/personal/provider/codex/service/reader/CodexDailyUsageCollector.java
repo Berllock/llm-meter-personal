@@ -1,16 +1,18 @@
 package com.llmeter.personal.provider.codex.service.reader;
 
+import com.llmeter.personal.provider.codex.domain.CodexModelDay;
 import com.llmeter.personal.provider.codex.domain.CodexTokenCounts;
 import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
-
 import tools.jackson.databind.JsonNode;
 
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 
 /** Collects observed daily increments without retaining the session transcript. */
@@ -18,6 +20,12 @@ final class CodexDailyUsageCollector {
 
     private final ZoneId zone;
     private final Map<LocalDate, CodexTokenCounts> days = new TreeMap<>();
+    private final Map<CodexModelDay, CodexTokenCounts> modelDays = new HashMap<>();
+    private String model;
+    private boolean modelChanged;
+    private boolean modelEventSeen;
+    private boolean contextUsable = true;
+    private Long contextOrdinal;
     private boolean started;
     private boolean related;
     private Long boundary;
@@ -51,6 +59,23 @@ final class CodexDailyUsageCollector {
         if (!related && boundary != null) {
             throw unavailable();
         }
+    }
+
+    void context(final JsonNode event) {
+        final var ordinal = event.path("ordinal");
+        if (!ordinal.isIntegralNumber() || !ordinal.canConvertToLong() || ordinal.longValue() < 0
+                || (contextOrdinal != null && ordinal.longValue() <= contextOrdinal)
+                || (previousOrdinal != null && ordinal.longValue() <= previousOrdinal)) {
+            contextUsable = false;
+            model = null;
+            return;
+        }
+        contextOrdinal = ordinal.longValue();
+        final var value = event.path("payload").path("model");
+        final String next = value.isString() && value.stringValue().matches("[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
+                ? value.stringValue() : null;
+        if (modelEventSeen && !Objects.equals(model, next)) modelChanged = true;
+        model = next;
     }
 
     void observe(final JsonNode event, final JsonNode info, final CodexUsageAttributor attributor) {
@@ -113,14 +138,34 @@ final class CodexDailyUsageCollector {
         final var knownContribution = contribution.retainKnownMetrics(previousContribution);
         final var delta = knownContribution.subtract(previousContribution);
         if (!delta.equals(new CodexTokenCounts(0L, 0L, 0L))) {
-            days.merge(timestamp.atZone(zone).toLocalDate(), delta, CodexTokenCounts::add);
+            final var date = timestamp.atZone(zone).toLocalDate();
+            days.merge(date, delta, CodexTokenCounts::add);
+            final boolean lastMatches = matchesLast(info, delta);
+            final String attributedModel = contextUsable && model != null && contextOrdinal != null
+                    && contextOrdinal < ordinal && (!related || boundary == null || contextOrdinal >= boundary)
+                    && (!modelChanged || lastMatches) ? model : null;
+            modelDays.merge(new CodexModelDay(date, attributedModel), delta, CodexTokenCounts::add);
         }
+        modelEventSeen = true;
+        modelChanged = false;
         previousContribution = knownContribution;
         previousRaw = total;
         lastKnown = lastKnown.latestKnown(total);
         previousOrdinal = ordinal;
         previousTime = timestamp;
     }
+
+    private boolean matchesLast(final JsonNode info, final CodexTokenCounts delta) {
+        try {
+            return info.path("last_token_usage").isObject()
+                    && delta.equals(CodexTokenCountsReader.read(info.path("last_token_usage")));
+        } catch (final ProviderCollectionException e) {
+            // Optional model evidence must not invalidate an otherwise supported numeric history.
+            return false;
+        }
+    }
+
+    Map<CodexModelDay, CodexTokenCounts> modelDays() { return Map.copyOf(modelDays); }
 
     Map<LocalDate, CodexTokenCounts> days() {
         return Map.copyOf(days);

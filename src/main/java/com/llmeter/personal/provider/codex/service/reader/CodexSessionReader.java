@@ -28,14 +28,14 @@ public class CodexSessionReader {
     public CodexDailySessionUsage readDaily(final Path sessionFile, final ZoneId zone) {
         final var collector = new CodexDailyUsageCollector(zone);
         final var session = read(sessionFile, collector);
-        return new CodexDailySessionUsage(session, collector.days());
+        return new CodexDailySessionUsage(session, collector.days(), collector.modelDays());
     }
 
     public CodexDailyObservation readDailyObservation(final Path sessionFile, final ZoneId zone) {
         final var daily = new CodexDailyUsageCollector(zone);
         final var result = readSession(sessionFile, daily, true);
         return new CodexDailyObservation(result.sessionId(), result.parentThreadId(), result.forkedFromId(),
-                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days()));
+                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days(), daily.modelDays()));
     }
 
     /** Reads a caller-owned stream so cached observations can be bound to the exact bytes parsed. */
@@ -43,7 +43,7 @@ public class CodexSessionReader {
         final var daily = new CodexDailyUsageCollector(zone);
         final var result = readSession(source, daily, true);
         return new CodexDailyObservation(result.sessionId(), result.parentThreadId(), result.forkedFromId(),
-                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days()));
+                result.session() == null ? null : new CodexDailySessionUsage(result.session(), daily.days(), daily.modelDays()));
     }
 
     private CodexSessionUsage read(final Path sessionFile, final CodexDailyUsageCollector daily) {
@@ -129,6 +129,10 @@ public class CodexSessionReader {
                         daily.start(payload, parentThreadId != null, forkedFromId != null);
                     }
                     continue;
+                }
+
+                if (daily != null && "turn_context".equals(event.path("type").asString())) {
+                    daily.context(event);
                 }
 
                 if (!event.path("type").equals(mapper.valueToTree("event_msg"))

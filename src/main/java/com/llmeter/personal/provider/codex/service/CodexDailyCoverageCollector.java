@@ -45,6 +45,7 @@ public final class CodexDailyCoverageCollector {
         // Established aggregation still validates every observed copy, before filtering by period.
         final var usage = new CodexDailyUsageAggregator().aggregateSessions(observed, period);
         return new ProviderDailyUsage(usage,
-                new ProviderCoverage(ProviderType.CODEX, identities.size() - pending, pending));
+                new ProviderCoverage(ProviderType.CODEX, identities.size() - pending, pending),
+                new CodexDailyUsageAggregator().aggregateModels(observed, period));
     }
 }

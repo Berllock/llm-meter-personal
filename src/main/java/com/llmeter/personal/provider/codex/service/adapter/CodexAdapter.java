@@ -5,6 +5,7 @@ import com.llmeter.personal.provider.codex.service.cache.CodexDailyObservationCa
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionFiles;
 import com.llmeter.personal.provider.codex.service.reader.CodexSessionReader;
+import com.llmeter.personal.provider.codex.service.reader.CodexQuotaReader;
 import com.llmeter.personal.provider.codex.service.CodexDailyUsageAggregator;
 import com.llmeter.personal.provider.codex.service.CodexSessionAggregator;
 import com.llmeter.personal.provider.domain.ProviderType;
@@ -48,7 +49,8 @@ public class CodexAdapter implements LlmProviderAdapter {
 
     @Override
     public Optional<QuotaSnapshot> getQuota() {
-        return Optional.empty();
+        return new CodexQuotaReader()
+                .read(directoryMode ? sessionFiles.find(sourcePath) : List.of(sourcePath));
     }
 
     @Override

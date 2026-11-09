@@ -130,7 +130,7 @@ public final class CodexDailyObservationCache {
                 final var afterParse = state(file);
                 if (beforeParse.equals(afterParse) && counted.bytes == afterParse.bytes()) {
                     retain(key, new Entry(digest.digest(), afterParse, observation,
-                            observation.dailyUsage() == null ? 0 : observation.dailyUsage().days().size()));
+                            observation.dailyUsage() == null ? 0 : Math.max(observation.dailyUsage().days().size(), observation.dailyUsage().modelDays().size())));
                 }
                 // A valid stream observed during a change has normal reader semantics, but is not cached.
                 return observation;

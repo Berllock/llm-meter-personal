@@ -1,17 +1,25 @@
 package com.llmeter.personal.usage.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.llmeter.personal.usage.domain.CollectionStatus;
 import com.llmeter.personal.usage.domain.UsagePeriod;
+
 import java.time.LocalDate;
 import java.util.List;
 
 public record DailyUsageCollection(
         LocalDate from, LocalDate to, String zone, CollectionStatus status,
-        List<DailyUsage> usage, List<ProviderCoverage> coverage
+        List<DailyUsage> usage, List<ProviderCoverage> coverage,
+        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ModelDailyUsage> modelUsage
 ) {
+    public DailyUsageCollection(final LocalDate from, final LocalDate to, final String zone, final CollectionStatus status,
+                                final List<DailyUsage> usage, final List<ProviderCoverage> coverage) {
+        this(from, to, zone, status, usage, coverage, List.of());
+    }
     public DailyUsageCollection {
         usage = List.copyOf(usage);
         coverage = List.copyOf(coverage);
+        modelUsage = List.copyOf(modelUsage);
     }
 
     public static DailyUsageCollection of(final UsagePeriod period, final List<ProviderDailyUsage> reports) {
@@ -19,6 +27,7 @@ public record DailyUsageCollection(
         final var status = coverage.stream().anyMatch((final var item) -> item.pendingSessions() > 0)
                 ? CollectionStatus.PARTIAL : CollectionStatus.COMPLETE;
         return new DailyUsageCollection(period.from(), period.to(), period.zone().getId(), status,
-                reports.stream().flatMap((final var report) -> report.usage().stream()).toList(), coverage);
+                reports.stream().flatMap((final var report) -> report.usage().stream()).toList(), coverage,
+                reports.stream().flatMap((final var report) -> report.modelUsage().stream()).toList());
     }
 }
