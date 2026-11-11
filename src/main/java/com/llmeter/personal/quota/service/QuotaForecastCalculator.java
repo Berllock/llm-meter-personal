@@ -54,11 +54,11 @@ public final class QuotaForecastCalculator {
 
     private boolean sameWindow(final QuotaWindow first, final QuotaWindow second) {
         return first.name().equals(second.name()) && Objects.equals(first.limitId(), second.limitId())
-                && first.windowMinutes() == second.windowMinutes() && first.resetAt().equals(second.resetAt());
+                && Objects.equals(first.windowMinutes(), second.windowMinutes()) && first.resetAt().equals(second.resetAt());
     }
     private boolean withinWindow(final QuotaWindow sample) {
         try {
-            return sample.observedAt() != null && sample.observedAt().isBefore(sample.resetAt())
+            return sample.windowMinutes() != null && sample.observedAt() != null && sample.observedAt().isBefore(sample.resetAt())
                     && !sample.observedAt().isBefore(sample.resetAt().minus(Duration.ofMinutes(sample.windowMinutes())));
         } catch (final ArithmeticException | DateTimeException e) { return false; }
     }

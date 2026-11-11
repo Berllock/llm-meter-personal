@@ -22,14 +22,17 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.TreeMap;
 
 public final class AntigravityAdapter implements LlmProviderAdapter {
     private final Path brainDirectory;
     private final AntigravitySessionReader reader = new AntigravitySessionReader();
 
-    public AntigravityAdapter(final Path brainDirectory) {
-        this.brainDirectory = brainDirectory;
+    private final Supplier<Optional<QuotaSnapshot>> quota;
+    public AntigravityAdapter(final Path brainDirectory) { this(brainDirectory, Optional::empty); }
+    public AntigravityAdapter(final Path brainDirectory, final Supplier<Optional<QuotaSnapshot>> quota) {
+        this.brainDirectory = brainDirectory; this.quota = quota;
     }
 
     @Override
@@ -89,5 +92,5 @@ public final class AntigravityAdapter implements LlmProviderAdapter {
     }
 
     @Override
-    public Optional<QuotaSnapshot> getQuota() { return Optional.empty(); }
+    public Optional<QuotaSnapshot> getQuota() { return quota.get(); }
 }

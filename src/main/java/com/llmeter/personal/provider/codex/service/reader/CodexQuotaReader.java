@@ -126,7 +126,7 @@ public final class CodexQuotaReader {
         for (final var observation : timeline.descendingMap().values()) {
             if (!Objects.equals(current.account(), observation.account()) || !Objects.equals(current.plan(), observation.plan())) break;
             final var compatible = observation.windows().stream().filter((final var candidate) -> candidate.name().equals(window.name())
-                    && candidate.windowMinutes() == window.windowMinutes() && candidate.resetAt().equals(window.resetAt())).findFirst();
+                    && Objects.equals(candidate.windowMinutes(), window.windowMinutes()) && candidate.resetAt().equals(window.resetAt())).findFirst();
             if (compatible.isEmpty()) break;
             samples.add(compatible.orElseThrow());
         }
