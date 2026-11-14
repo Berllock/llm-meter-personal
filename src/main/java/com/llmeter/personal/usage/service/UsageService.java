@@ -2,13 +2,18 @@ package com.llmeter.personal.usage.service;
 
 import com.llmeter.personal.provider.LlmProviderAdapter;
 import com.llmeter.personal.provider.domain.ProviderType;
+import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
+import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.usage.domain.UsagePeriod;
 import com.llmeter.personal.usage.dto.DailyUsage;
 import com.llmeter.personal.usage.dto.DailyUsageCollection;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
+import com.llmeter.personal.usage.dto.ProviderDailyUsage;
+import com.llmeter.personal.usage.dto.ProviderUsageFailure;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.stream.Stream;
 
 @Service
@@ -35,8 +40,22 @@ public class UsageService {
     }
 
     public DailyUsageCollection collectDailyUsage(final UsagePeriod period, final ProviderType provider) {
-        return DailyUsageCollection.of(period, selected(provider)
-                .map((final var adapter) -> adapter.getDailyUsageReport(period)).toList());
+        final var reports = new ArrayList<ProviderDailyUsage>();
+        final var failures = new ArrayList<ProviderUsageFailure>();
+        for (final var adapter : selected(provider).toList()) {
+            try {
+                final var report = adapter.getDailyUsageReport(period);
+                if (report == null || report.coverage().provider() != adapter.provider()) {
+                    throw new IllegalStateException("Provider report identity mismatch");
+                }
+                reports.add(report);
+            } catch (final ProviderCollectionException e) {
+                failures.add(new ProviderUsageFailure(adapter.provider(), e.failure()));
+            } catch (final RuntimeException e) {
+                failures.add(new ProviderUsageFailure(adapter.provider(), ProviderCollectionFailure.UNKNOWN));
+            }
+        }
+        return DailyUsageCollection.of(period, reports, failures);
     }
 
     public List<DailyUsage> getDailyUsage(final UsagePeriod period) {

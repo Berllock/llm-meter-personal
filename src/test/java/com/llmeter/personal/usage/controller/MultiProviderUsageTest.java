@@ -42,8 +42,18 @@ class MultiProviderUsageTest {
                 .andExpect(jsonPath("$.usage.length()").value(1)).andExpect(jsonPath("$.coverage.length()").value(1))
                 .andExpect(jsonPath("$.coverage[0].provider").value("ANTIGRAVITY"));
         Files.writeString(full, "{");
-        http.perform(get(query)).andExpect(status().isServiceUnavailable())
+        http.perform(get(query)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PARTIAL"))
+                .andExpect(jsonPath("$.usage.length()").value(1)).andExpect(jsonPath("$.coverage.length()").value(1))
+                .andExpect(jsonPath("$.usage[0].provider").value("CODEX"))
+                .andExpect(jsonPath("$.failures[0].provider").value("ANTIGRAVITY"))
+                .andExpect(jsonPath("$.failures[0].reason").value("INVALID_JSON"))
                 .andExpect(content().string(not(containsString(brain.toString()))));
+        http.perform(get(query + "&provider=ANTIGRAVITY")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED")).andExpect(jsonPath("$.usage").isEmpty())
+                .andExpect(jsonPath("$.coverage").isEmpty());
+        http.perform(get("/api/usage")).andExpect(status().isServiceUnavailable());
+        http.perform(get("/api/usage/daily?from=2026-11-01&to=2026-11-01")).andExpect(status().isServiceUnavailable());
         http.perform(get(query + "&provider=CODEX")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.usage[0].provider").value("CODEX"));
         http.perform(get("/api/usage?provider=CODEX")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));

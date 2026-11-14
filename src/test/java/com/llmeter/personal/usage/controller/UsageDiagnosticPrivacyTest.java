@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class UsageDiagnosticPrivacyTest {
 
-    // Verifies that every internal failure category preserves the generic HTTP 503 contract for both endpoints.
+    // Validates legacy errors stay generic while collection exposes only the safe provider/reason pair.
     @ParameterizedTest
     @EnumSource(ProviderCollectionFailure.class)
     void shouldKeepDiagnosticDetailsOutOfHttp(final ProviderCollectionFailure category) throws Exception {
@@ -52,7 +52,7 @@ class UsageDiagnosticPrivacyTest {
         final var http = MockMvcBuilders.standaloneSetup(new UsageController(new UsageService(List.of(adapter))))
                 .setControllerAdvice(new UsageExceptionHandler()).build();
 
-        for (final var path : List.of("/api/usage", "/api/usage/daily", "/api/usage/daily/collection")) {
+        for (final var path : List.of("/api/usage", "/api/usage/daily")) {
             http.perform(get(path).param("from", "2026-10-24").param("to", "2026-10-26"))
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(jsonPath("$.title").value("Usage collection unavailable"))
@@ -63,5 +63,12 @@ class UsageDiagnosticPrivacyTest {
                     .andExpect(content().string(not(containsString("PRIVATE_SESSION_CONTENT"))))
                     .andExpect(content().string(not(containsString("PRIVATE_CAUSE"))));
         }
+        http.perform(get("/api/usage/daily/collection").param("from", "2026-10-24").param("to", "2026-10-26"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failures[0].provider").value("CODEX"))
+                .andExpect(jsonPath("$.failures[0].reason").value(category.name()))
+                .andExpect(jsonPath("$.usage").isEmpty()).andExpect(jsonPath("$.coverage").isEmpty())
+                .andExpect(content().string(not(containsString("PRIVATE_SESSION_CONTENT"))))
+                .andExpect(content().string(not(containsString("PRIVATE_CAUSE"))));
     }
 }

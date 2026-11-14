@@ -26,7 +26,6 @@ public final class AntigravitySessionReader {
         final Map<Long, Step> steps = new HashMap<>();
         final Map<LocalDate, AntigravityTokenCounts> days = new HashMap<>();
         long lastIndex = -1;
-        Instant lastTimestamp = null;
         try (final var reader = Files.newBufferedReader(file)) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -65,11 +64,11 @@ public final class AntigravitySessionReader {
                     if (!existing.equals(step)) throw failure(ProviderCollectionFailure.CONFLICTING_DATA);
                     continue;
                 }
-                if (index <= lastIndex || (lastTimestamp != null && timestamp.isBefore(lastTimestamp))) {
+                // Step order is defined by the index; independently created events can overlap in time.
+                if (index <= lastIndex) {
                     throw failure(ProviderCollectionFailure.INVALID_SEQUENCE);
                 }
                 lastIndex = index;
-                lastTimestamp = timestamp;
                 steps.put(index, step);
                 if (hasCounts) days.merge(timestamp.atZone(zone).toLocalDate(),
                         AntigravityTokenCounts.fromRaw(input, output, cached), AntigravityTokenCounts::add);

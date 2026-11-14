@@ -42,7 +42,10 @@ class KiroUsageContractTest {
         http.perform(get("/api/usage/daily?from=2026-11-03&to=2026-11-03&provider=KIRO"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].credits").value("0.3"));
         Files.writeString(file, "{");
-        http.perform(get(query)).andExpect(status().isServiceUnavailable())
+        http.perform(get(query)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PARTIAL"))
+                .andExpect(jsonPath("$.usage.length()").value(1)).andExpect(jsonPath("$.usage[0].provider").value("CODEX"))
+                .andExpect(jsonPath("$.failures[0].provider").value("KIRO"))
                 .andExpect(content().string(not(containsString(root.toString()))));
         http.perform(get(query + "&provider=CODEX")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.usage[0].inputTokens").value(100));

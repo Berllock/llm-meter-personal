@@ -50,11 +50,14 @@ class UsageCollectionControllerTest {
         http().perform(get("/api/usage/daily/collection").param("from", from).param("to", "2026-10-26"))
                 .andExpect(status().isBadRequest());
     }
-    // Validates an empty file remains an unsafe source error, not a pending identified session.
+    // Validates an unsafe source reports failed collection without invented rows or coverage.
     @Test void shouldKeepUnsafeFailuresGeneric() throws Exception {
         Files.writeString(directory.resolve("PRIVATE_PATH.jsonl"), "");
         http().perform(get("/api/usage/daily/collection").param("from", "2026-10-24").param("to", "2026-10-26"))
-                .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.usage").doesNotExist())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.usage").isEmpty()).andExpect(jsonPath("$.coverage").isEmpty())
+                .andExpect(jsonPath("$.failures[0].provider").value("CODEX"))
+                .andExpect(jsonPath("$.failures[0].reason").value("INVALID_IDENTITY"))
                 .andExpect(content().string(not(containsString("PRIVATE_PATH"))));
     }
 }

@@ -50,6 +50,33 @@ class AntigravitySessionReaderTest {
         assertTrue(result.days().isEmpty());
     }
 
+    // Validates an input created before the preceding response does not invalidate increasing step indices.
+    @Test
+    void shouldAcceptOverlappingEventTimestamps(@TempDir final Path root) throws Exception {
+        final String input = """
+                {"step_index":2,"type":"USER_INPUT","source":"USER_EXPLICIT","status":"DONE","created_at":"2026-11-02T00:59:19Z"}
+                """;
+        final var result = read(root, HEADER + STEP + input + STEP.replace("\"step_index\":1", "\"step_index\":3"), "UTC");
+        final var counts = result.days().get(LocalDate.parse("2026-11-02"));
+        assertTrue(result.observed());
+        assertEquals(200L, counts.input());
+        assertEquals(160L, counts.cached());
+        assertEquals(20L, counts.output());
+        assertEquals(1, result.days().size());
+    }
+
+    // Validates model usage is attributed to its own event date even when timestamps differ from index order.
+    @Test
+    void shouldAttributeOutOfTimeOrderCountsToTheirOwnDay(@TempDir final Path root) throws Exception {
+        final String earlier = STEP.replace("\"step_index\":1", "\"step_index\":2")
+                .replace("2026-11-02T01:00:00Z", "2026-11-01T23:30:00Z");
+        final var result = read(root, HEADER + STEP + earlier + earlier, "UTC");
+        assertEquals(2, result.days().size());
+        assertEquals(100L, result.days().get(LocalDate.parse("2026-11-01")).input());
+        assertEquals(100L, result.days().get(LocalDate.parse("2026-11-02")).input());
+        assertEquals(10L, result.days().get(LocalDate.parse("2026-11-01")).output());
+    }
+
     // Validates malformed, unsupported, conflicting, missing-counter, invalid-time, and overflow histories fail explicitly.
     @ParameterizedTest
     @CsvSource({"json,INVALID_JSON", "negative,INVALID_METRICS", "fraction,INVALID_METRICS", "overflow,OVERFLOW",
@@ -66,7 +93,7 @@ class AntigravitySessionReaderTest {
             case "identity" -> STEP;
             case "unsupported" -> HEADER + STEP.replace("PLANNER_RESPONSE", "UNRECOGNIZED_RESPONSE");
             case "missing" -> HEADER + STEP.replace("\"input_tokens\":20,\"cache_read_tokens\":80,\"output_tokens\":10,", "");
-            case "sequence" -> HEADER + STEP + STEP.replace("\"step_index\":1", "\"step_index\":2").replace("2026-11-02T01:00:00Z", "2026-11-01T22:00:00Z");
+            case "sequence" -> HEADER + STEP.replace("\"step_index\":1", "\"step_index\":2") + STEP;
             default -> throw new AssertionError();
         };
         final var error = assertThrows(ProviderCollectionException.class, () -> read(root, text, "UTC"));
