@@ -3,6 +3,8 @@ package com.llmeter.personal.quota.service.history;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.quota.dto.QuotaHistoryEntry;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
+import com.llmeter.personal.quota.dto.QuotaComparability.AccountStatus;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,7 +33,9 @@ public final class QuotaHistoryStore {
     private final int maxEntries;
     private final int maxBytes;
     private final QuotaHistoryCodec codec = new QuotaHistoryCodec();
-    private record Stored(String context, QuotaHistoryEntry observation) {}
+    private final QuotaComparabilityPolicy comparability = new QuotaComparabilityPolicy();
+    private record Stored(String context, QuotaHistoryEntry observation,
+                          @JsonInclude(JsonInclude.Include.NON_NULL) String accountFingerprint) {}
     private record Document(int version, List<Stored> observations) {}
 
     public QuotaHistoryStore(final Path directory) {
@@ -48,7 +52,9 @@ public final class QuotaHistoryStore {
         if (!enabled()) return;
         if (context == null || !context.matches("[0-9a-f]{64}") || savedAt == null) throw new IllegalArgumentException("Invalid history context");
         final var snapshot = codec.reduced(value);
-        final var id = codec.identity(context, snapshot);
+        final var fingerprint = comparability.accountFingerprint(value);
+        final var comparison = comparability.evaluate(context, snapshot, fingerprint, false);
+        final var id = codec.identity(context, snapshot, fingerprint);
         prepareDirectory();
         final var lockPath = path(snapshot.provider(), ".lock");
         try { createPrivateFile(lockPath); } catch (final FileAlreadyExistsException ignored) { /* Reuse the provider lock. */ }
@@ -61,7 +67,7 @@ public final class QuotaHistoryStore {
             final boolean known = existing.stream().anyMatch(entry -> entry.observation().id().equals(id));
             if (known && existing.size() == loaded.size()) return;
             final var entries = new ArrayList<>(existing);
-            if (!known) entries.add(new Stored(context, new QuotaHistoryEntry(id, savedAt, false, snapshot)));
+            if (!known) entries.add(new Stored(context, new QuotaHistoryEntry(id, savedAt, fingerprint != null, snapshot, comparison), fingerprint));
             entries.sort(Comparator.comparing(entry -> entry.observation().savedAt()));
             final int first = Math.max(0, entries.size() - maxEntries);
             final var bounded = List.copyOf(entries.subList(first, entries.size()));
@@ -98,20 +104,29 @@ public final class QuotaHistoryStore {
             for (final var entry : tree.path("observations")) {
                 final var snapshot = entry.path("observation").path("snapshot");
                 if (!(snapshot instanceof ObjectNode object)) throw new IOException("Invalid history observation");
+                if (object.has("accountEvidence")) throw new IOException("Raw account evidence is not an archive field");
                 // QuotaSnapshot omits its zero-valued count; all other required primitive fields remain strict.
                 if (!object.has("excludedWindows")) object.put("excludedWindows", 0);
             }
             final var document = codec.mapper.treeToValue(tree, Document.class);
-            if (document.version() != 1 || document.observations() == null || document.observations().size() > maxEntries) throw new IOException("Unsupported history");
+            if ((document.version() != 1 && document.version() != 2) || document.observations() == null || document.observations().size() > maxEntries) throw new IOException("Unsupported history");
             final var ids = new HashSet<String>();
+            final var restored = new ArrayList<Stored>();
             for (final var entry : document.observations()) {
                 if (entry == null || entry.context() == null || !entry.context().matches("[0-9a-f]{64}")) throw new IOException("Invalid history context");
                 final var observation = entry.observation();
-                if (observation == null || observation.savedAt() == null || observation.accountVerified()
+                if (observation == null || observation.savedAt() == null
                         || observation.snapshot().provider() != provider || !codec.reduced(observation.snapshot()).equals(observation.snapshot())
-                        || !codec.identity(entry.context(), observation.snapshot()).equals(observation.id()) || !ids.add(observation.id())) throw new IOException("Invalid history observation");
+                        || !ids.add(observation.id())) throw new IOException("Invalid history observation");
+                if (document.version() == 1 && (entry.accountFingerprint() != null || observation.accountVerified() || observation.comparability() != null)) throw new IOException("Invalid legacy context");
+                final boolean legacy = document.version() == 1 || observation.comparability() != null && observation.comparability().accountStatus() == AccountStatus.LEGACY;
+                final var expected = comparability.evaluate(entry.context(), observation.snapshot(), entry.accountFingerprint(), legacy);
+                final var expectedId = legacy ? codec.identity(entry.context(), observation.snapshot()) : codec.identity(entry.context(), observation.snapshot(), entry.accountFingerprint());
+                if (observation.accountVerified() != (entry.accountFingerprint() != null) || !expectedId.equals(observation.id())
+                        || document.version() == 2 && !expected.equals(observation.comparability())) throw new IOException("Inconsistent comparison context");
+                restored.add(new Stored(entry.context(), new QuotaHistoryEntry(observation.id(), observation.savedAt(), observation.accountVerified(), observation.snapshot(), expected), entry.accountFingerprint()));
             }
-            return document.observations();
+            return List.copyOf(restored);
         } catch (final RuntimeException e) { throw new IOException("History could not be read safely"); }
     }
     private List<Stored> retained(final List<Stored> entries, final Instant now) {
@@ -122,14 +137,14 @@ public final class QuotaHistoryStore {
         // Binary search the oldest removable prefix rather than repeatedly serializing one deletion at a time.
         int start = 0;
         int end = entries.size() - 1;
-        byte[] result = codec.mapper.writeValueAsBytes(new Document(1, entries));
+        byte[] result = codec.mapper.writeValueAsBytes(new Document(2, entries));
         if (result.length <= maxBytes) return result;
         while (start < end) {
             final int middle = (start + end) / 2;
-            final var candidate = codec.mapper.writeValueAsBytes(new Document(1, entries.subList(middle, entries.size())));
+            final var candidate = codec.mapper.writeValueAsBytes(new Document(2, entries.subList(middle, entries.size())));
             if (candidate.length <= maxBytes) end = middle; else start = middle + 1;
         }
-        result = codec.mapper.writeValueAsBytes(new Document(1, entries.subList(start, entries.size())));
+        result = codec.mapper.writeValueAsBytes(new Document(2, entries.subList(start, entries.size())));
         if (result.length > maxBytes) throw new IOException("Observation exceeds history bound");
         return result;
     }

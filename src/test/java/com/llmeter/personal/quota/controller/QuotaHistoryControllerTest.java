@@ -1,6 +1,10 @@
 package com.llmeter.personal.quota.controller;
 
 import com.llmeter.personal.provider.domain.ProviderType;
+import com.llmeter.personal.provider.FakeLlmProviderAdapter;
+import com.llmeter.personal.quota.domain.QuotaAccountEvidence;
+import com.llmeter.personal.quota.dto.QuotaSnapshot;
+import com.llmeter.personal.usage.dto.UsageSnapshot;
 import com.llmeter.personal.quota.service.QuotaService;
 import com.llmeter.personal.quota.service.history.QuotaHistoryService;
 import com.llmeter.personal.quota.service.history.QuotaHistoryStore;
@@ -14,6 +18,7 @@ import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -54,5 +59,26 @@ class QuotaHistoryControllerTest {
         http(history).perform(get("/api/quota/history").param("provider", "PRIVATE_PATH")).andExpect(status().isBadRequest());
         http(QuotaHistoryService.disabled()).perform(get("/api/quota/history"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DISABLED"));
+    }
+
+    // Validates recorded account evidence is private in live HTTP and only reduced comparison context reaches history HTTP.
+    @Test void shouldKeepRawIdentityOutsideBothHttpContracts() throws Exception {
+        final var base = codex(NOW, 20);
+        final var snapshot = new QuotaSnapshot(ProviderType.CODEX, null, null, null, NOW, NOW, "plus", "codex", base.windows(),
+                null, 0, null, new QuotaAccountEvidence("SYNTHETIC_PRIVATE_ACCOUNT"));
+        final var source = new FakeLlmProviderAdapter(new UsageSnapshot(ProviderType.CODEX, null, null, null, NOW)) {
+            @Override public Optional<QuotaSnapshot> getQuota() { return Optional.of(snapshot); }
+        };
+        final var history = new QuotaHistoryService(new QuotaHistoryStore(directory), Map.of(ProviderType.CODEX, CONTEXT), Clock.fixed(NOW, ZoneOffset.UTC));
+        final var http = MockMvcBuilders.standaloneSetup(new QuotaController(new QuotaService(List.of(source), history))).build();
+        http.perform(get("/api/quota")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].snapshot.accountEvidence").doesNotExist())
+                .andExpect(content().string(not(containsString("SYNTHETIC_PRIVATE_ACCOUNT"))));
+        http.perform(get("/api/quota/history")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.observations[0].accountVerified").value(true))
+                .andExpect(jsonPath("$.observations[0].comparability.accountStatus").value("RECORDED_ACCOUNT"))
+                .andExpect(jsonPath("$.observations[0].comparability.groups[0].reasons").isEmpty())
+                .andExpect(content().string(not(containsString("SYNTHETIC_PRIVATE_ACCOUNT"))))
+                .andExpect(content().string(not(containsString("accountFingerprint"))));
     }
 }

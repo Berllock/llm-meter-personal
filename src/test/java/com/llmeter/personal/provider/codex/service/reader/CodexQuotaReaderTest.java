@@ -82,4 +82,17 @@ class CodexQuotaReaderTest {
         final var second = write("second.jsonl", header.replace("synthetic-a", "synthetic-b"));
         assertThatThrownBy(() -> reader.read(List.of(first, second))).isInstanceOf(ProviderCollectionException.class);
     }
+
+    // Validates only account metadata attached to every included quota window can identify an archived snapshot.
+    @Test void shouldBindAccountEvidenceToIncludedWindows() throws Exception {
+        final String header = "{\"type\":\"session_meta\",\"payload\":{\"creator_account_id\":\"SYNTHETIC_PRIVATE_ACCOUNT\"}}\n";
+        final var known = write("known.jsonl", header + event("2026-10-25T10:00:00Z", "codex", "plus", 20));
+        final var result = reader.read(List.of(known)).orElseThrow();
+        assertThat(result.accountEvidence().recordedAccountId()).isEqualTo("SYNTHETIC_PRIVATE_ACCOUNT");
+        assertThat(result.toString()).doesNotContain("SYNTHETIC_PRIVATE_ACCOUNT");
+        final var unknown = write("unknown.jsonl", event("2026-10-25T11:00:00Z", "model-x", "plus", 40));
+        assertThat(reader.read(List.of(known, unknown)).orElseThrow().accountEvidence()).isNull();
+        final var unrelated = write("unrelated.jsonl", header);
+        assertThat(reader.read(List.of(unrelated, unknown)).orElseThrow().accountEvidence()).isNull();
+    }
 }

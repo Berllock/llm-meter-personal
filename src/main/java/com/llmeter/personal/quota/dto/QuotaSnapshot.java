@@ -2,6 +2,8 @@ package com.llmeter.personal.quota.dto;
 
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.llmeter.personal.quota.domain.QuotaAccountEvidence;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,8 +20,15 @@ public record QuotaSnapshot(
         List<QuotaWindow> windows,
         @JsonInclude(JsonInclude.Include.NON_NULL) String source,
         @JsonInclude(JsonInclude.Include.NON_DEFAULT) int excludedWindows,
-        @JsonInclude(JsonInclude.Include.NON_NULL) CreditQuota creditQuota
+        @JsonInclude(JsonInclude.Include.NON_NULL) CreditQuota creditQuota,
+        @JsonIgnore QuotaAccountEvidence accountEvidence
 ) {
+    public QuotaSnapshot(final ProviderType provider, final Long used, final Long limit, final Instant resetAt,
+                         final Instant collectedAt, final Instant observedAt, final String planType,
+                         final String limitId, final List<QuotaWindow> windows, final String source, final int excludedWindows,
+                         final CreditQuota creditQuota) {
+        this(provider, used, limit, resetAt, collectedAt, observedAt, planType, limitId, windows, source, excludedWindows, creditQuota, null);
+    }
     public QuotaSnapshot(final ProviderType provider, final Long used, final Long limit, final Instant resetAt,
                          final Instant collectedAt, final Instant observedAt, final String planType,
                          final String limitId, final List<QuotaWindow> windows, final String source, final int excludedWindows) {

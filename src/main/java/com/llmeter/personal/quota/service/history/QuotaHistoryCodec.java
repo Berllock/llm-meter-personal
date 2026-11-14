@@ -64,10 +64,16 @@ public final class QuotaHistoryCodec {
                 snapshot.planType(), snapshot.limitId(), windows, snapshot.source(), snapshot.excludedWindows(), snapshot.creditQuota());
     }
 
+    /** Original v1 checksum, retained to read legacy records without changing their IDs. */
     public String identity(final String context, final QuotaSnapshot snapshot) {
         final var normalized = new QuotaSnapshot(snapshot.provider(), null, null, null, snapshot.observedAt(), snapshot.observedAt(),
                 snapshot.planType(), snapshot.limitId(), snapshot.windows(), snapshot.source(), snapshot.excludedWindows(), snapshot.creditQuota());
         return hash(context + "\n" + mapper.writeValueAsString(normalized));
+    }
+
+    /** Version 2 binds new record identity to the captured account context as well as the reduced snapshot. */
+    public String identity(final String context, final QuotaSnapshot snapshot, final String accountFingerprint) {
+        return hash("quota-history-v2\n" + identity(context, snapshot) + "\n" + (accountFingerprint == null ? "unverified" : accountFingerprint));
     }
 
     public static String hash(final String value) {

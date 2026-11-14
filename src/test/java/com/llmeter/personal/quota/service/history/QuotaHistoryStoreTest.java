@@ -88,7 +88,7 @@ class QuotaHistoryStoreTest {
         store.append(CONTEXT, codex(NOW, 20), NOW);
         final var file = directory.resolve("codex.json");
         final var valid = Files.readString(file);
-        for (final var bad : List.of("{", valid.replace("\"version\":1", "\"version\":99"), valid.replace("20.0", "21.0"))) {
+        for (final var bad : List.of("{", valid.replace("\"version\":2", "\"version\":99"), valid.replace("20.0", "21.0"))) {
             Files.writeString(file, bad);
             assertThatThrownBy(() -> store.read(ProviderType.CODEX, CONTEXT, NOW)).isInstanceOf(IOException.class);
             assertThatThrownBy(() -> store.append(CONTEXT, codex(NOW.plusSeconds(60), 30), NOW)).isInstanceOf(IOException.class);

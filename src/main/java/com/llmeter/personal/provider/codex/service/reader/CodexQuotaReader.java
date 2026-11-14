@@ -6,6 +6,7 @@ import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
 import com.llmeter.personal.quota.dto.QuotaWindow;
 import com.llmeter.personal.quota.service.QuotaForecastCalculator;
+import com.llmeter.personal.quota.domain.QuotaAccountEvidence;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -104,8 +105,14 @@ public final class CodexQuotaReader {
                         .comparing(QuotaWindow::limitId, Comparator.nullsFirst(String::compareTo))
                         .thenComparing(QuotaWindow::name)).toList();
         if (windows.isEmpty()) return Optional.empty();
+        final var included = scopes.values().stream().filter(value -> Objects.equals(value.plan(), latestPlan) && !value.windows().isEmpty()).toList();
+        final String recordedAccount = included.getFirst().account();
+        final boolean identified = recordedAccount != null && !recordedAccount.isBlank() && recordedAccount.length() <= 512
+                && recordedAccount.chars().noneMatch(Character::isISOControl)
+                && included.stream().allMatch(value -> recordedAccount.equals(value.account()));
         return Optional.of(new QuotaSnapshot(ProviderType.CODEX, null, null, null, collectedAt, latest.time(),
-                latest.plan(), scopes.size() == 1 ? latest.scope() : null, windows));
+                latest.plan(), scopes.size() == 1 ? latest.scope() : null, windows, null, 0, null,
+                identified ? new QuotaAccountEvidence(recordedAccount) : null));
     }
 
     /** Retains only bounded recent source observations; polling the same bytes adds no samples. */
