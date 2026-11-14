@@ -17,8 +17,14 @@ public record QuotaSnapshot(
         String limitId,
         List<QuotaWindow> windows,
         @JsonInclude(JsonInclude.Include.NON_NULL) String source,
-        @JsonInclude(JsonInclude.Include.NON_DEFAULT) int excludedWindows
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT) int excludedWindows,
+        @JsonInclude(JsonInclude.Include.NON_NULL) CreditQuota creditQuota
 ) {
+    public QuotaSnapshot(final ProviderType provider, final Long used, final Long limit, final Instant resetAt,
+                         final Instant collectedAt, final Instant observedAt, final String planType,
+                         final String limitId, final List<QuotaWindow> windows, final String source, final int excludedWindows) {
+        this(provider, used, limit, resetAt, collectedAt, observedAt, planType, limitId, windows, source, excludedWindows, null);
+    }
     public QuotaSnapshot(final ProviderType provider, final Long used, final Long limit, final Instant resetAt,
                          final Instant collectedAt, final Instant observedAt, final String planType,
                          final String limitId, final List<QuotaWindow> windows) {

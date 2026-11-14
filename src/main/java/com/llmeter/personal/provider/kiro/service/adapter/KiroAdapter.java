@@ -27,15 +27,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Supplier;
 
 public final class KiroAdapter implements LlmProviderAdapter {
     private final Path directory;
+    private final Supplier<Optional<QuotaSnapshot>> quota;
     private final KiroSessionReader reader = new KiroSessionReader();
-    public KiroAdapter(final Path directory) { this.directory = directory; }
+    public KiroAdapter(final Path directory) { this(directory, Optional::empty); }
+    public KiroAdapter(final Path directory, final Supplier<Optional<QuotaSnapshot>> quota) {
+        this.directory = directory; this.quota = quota;
+    }
     @Override
     public ProviderType provider() { return ProviderType.KIRO; }
     @Override
-    public Optional<QuotaSnapshot> getQuota() { return Optional.empty(); }
+    public Optional<QuotaSnapshot> getQuota() { return quota.get(); }
     @Override
     public UsageSnapshot getUsage() {
         final var report = getDailyUsageReport(new UsagePeriod(LocalDate.MIN, LocalDate.MAX, ZoneId.of("UTC")));

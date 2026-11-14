@@ -6,6 +6,7 @@ import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
 import com.llmeter.personal.quota.dto.QuotaWindow;
+import com.llmeter.personal.provider.kiro.service.reader.KiroQuotaReader;
 import com.llmeter.personal.quota.service.QuotaService;
 import com.llmeter.personal.usage.dto.UsageSnapshot;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,6 +37,22 @@ class QuotaControllerTest {
     private Source adapter(final ProviderType provider) { return new Source(provider); }
     private MockMvc http(final LlmProviderAdapter... adapters) {
         return MockMvcBuilders.standaloneSetup(new QuotaController(new QuotaService(List.of(adapters)))).build();
+    }
+    // Validates exact credit strings and date-only renewal cross the HTTP boundary without token amounts.
+    @Test void shouldExposeKiroAccountCreditsSeparately() throws Exception {
+        final var kiro = adapter(ProviderType.KIRO);
+        final var codex = adapter(ProviderType.CODEX);
+        kiro.quota = new KiroQuotaReader().read("""
+                {"success":true,"data":{"planName":"Synthetic Free","billingCycleReset":"2026-12-01","overagesEnabled":false,
+                "usageBreakdowns":[{"resourceType":"CREDIT","hasLimit":true,"used":1.123456789012345678,"limit":50}],"bonusCredits":[],"addOnCredits":[]}}
+                """.getBytes(StandardCharsets.UTF_8), Instant.parse("2026-11-11T12:00:00Z"));
+        http(codex, kiro).perform(get("/api/quota").param("provider", "KIRO"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].snapshot.source").value("KIRO_CLI"))
+                .andExpect(jsonPath("$[0].snapshot.windows", hasSize(0)))
+                .andExpect(jsonPath("$[0].snapshot.used").isEmpty())
+                .andExpect(jsonPath("$[0].snapshot.creditQuota.renewalDate").value("2026-12-01"))
+                .andExpect(jsonPath("$[0].snapshot.creditQuota.allowances[0].used").value("1.123456789012345678"));
+        assertThat(codex.reads).isZero();
     }
     // Validates selection happens before source access and percentages are exposed without invented token limits.
     @Test void shouldFilterBeforeReading() throws Exception {
