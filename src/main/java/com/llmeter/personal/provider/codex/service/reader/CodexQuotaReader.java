@@ -4,6 +4,7 @@ import com.llmeter.personal.provider.domain.ProviderCollectionFailure;
 import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.provider.exception.ProviderCollectionException;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
+import com.llmeter.personal.quota.dto.QuotaForecast.Source;
 import com.llmeter.personal.quota.dto.QuotaWindow;
 import com.llmeter.personal.quota.service.QuotaForecastCalculator;
 import com.llmeter.personal.quota.domain.QuotaAccountEvidence;
@@ -129,18 +130,25 @@ public final class CodexQuotaReader {
     private QuotaWindow withForecast(final Observation current, final QuotaWindow window,
                                     final TreeMap<Instant, Observation> timeline, final Instant now) {
         final var samples = new ArrayList<QuotaWindow>();
+        Instant historyBoundary = null;
         // Stop at plan/account/reset changes or explicit missing windows; never bridge incompatible history.
         for (final var observation : timeline.descendingMap().values()) {
-            if (!Objects.equals(current.account(), observation.account()) || !Objects.equals(current.plan(), observation.plan())) break;
+            if (!Objects.equals(current.account(), observation.account()) || !Objects.equals(current.plan(), observation.plan())) {
+                historyBoundary = observation.time();
+                break;
+            }
             final var compatible = observation.windows().stream().filter((final var candidate) -> candidate.name().equals(window.name())
                     && Objects.equals(candidate.windowMinutes(), window.windowMinutes()) && candidate.resetAt().equals(window.resetAt())).findFirst();
-            if (compatible.isEmpty()) break;
+            if (compatible.isEmpty()) {
+                historyBoundary = observation.time();
+                break;
+            }
             samples.add(compatible.orElseThrow());
         }
         Collections.reverse(samples);
         final boolean verified = current.account() != null && current.plan() != null && current.scope() != null;
         return new QuotaWindow(window.name(), window.usedPercent(), window.windowMinutes(), window.resetAt(), window.limitId(),
-                window.observedAt(), forecasts.calculate(samples, now, verified));
+                window.observedAt(), forecasts.calculate(samples, now, verified).withSource(Source.NATIVE_LOGS).withHistoryBoundary(historyBoundary));
     }
 
     private String label(final JsonNode value) {

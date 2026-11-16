@@ -26,7 +26,7 @@ public class QuotaService {
                     try {
                         return adapter.getQuota().map((final var value) -> {
                                     history.record(value);
-                                    return new ProviderQuota(adapter.provider(), ProviderQuota.Status.OBSERVED, value);
+                                    return new ProviderQuota(adapter.provider(), ProviderQuota.Status.OBSERVED, history.withForecasts(value));
                                 })
                                 .orElseGet(() -> new ProviderQuota(adapter.provider(), ProviderQuota.Status.UNAVAILABLE, null));
                     } catch (final ProviderCollectionException e) {

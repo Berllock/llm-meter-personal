@@ -47,6 +47,8 @@ class QuotaForecastCalculatorTest {
     // Validates resets, gaps, timestamp replays and cross-window samples cannot masquerade as a continuous pace.
     @Test void shouldRejectDiscontinuousCounters() {
         for (final var samples : List.of(
+                List.of(sample(0, 20), sample(120, 10)),
+                List.of(sample(0, 20), sample(900, 30)),
                 List.of(sample(0, 20), sample(120, 10), sample(240, 40)),
                 List.of(sample(0, 20), sample(900, 30), sample(1020, 40)),
                 List.of(sample(0, 20), sample(0, 30), sample(240, 40)),

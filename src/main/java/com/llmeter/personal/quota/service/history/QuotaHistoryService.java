@@ -4,6 +4,7 @@ import com.llmeter.personal.provider.domain.ProviderType;
 import com.llmeter.personal.quota.dto.QuotaHistoryEntry;
 import com.llmeter.personal.quota.dto.QuotaHistoryResponse;
 import com.llmeter.personal.quota.dto.QuotaSnapshot;
+import com.llmeter.personal.quota.dto.QuotaForecast;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -29,6 +30,18 @@ public final class QuotaHistoryService {
             store.append(contexts.get(snapshot.provider()), snapshot, clock.instant());
             writeFailures.remove(snapshot.provider());
         } catch (final IOException | RuntimeException e) { writeFailures.add(snapshot.provider()); }
+    }
+
+    /** Reads the full bounded provider archive, independently of the history panel's display limit. */
+    public synchronized QuotaSnapshot withForecasts(final QuotaSnapshot snapshot) {
+        if (!store.enabled() || snapshot.provider() != ProviderType.CODEX || snapshot.accountEvidence() == null
+                || !contexts.containsKey(snapshot.provider()) || snapshot.windows().stream().noneMatch((final var window) -> window.forecast() == null
+                    || window.forecast().status() == QuotaForecast.Status.INSUFFICIENT_DATA)) return snapshot;
+        try {
+            final var now = clock.instant();
+            final var context = contexts.get(snapshot.provider());
+            return new QuotaHistoryForecasts().enrich(snapshot, context, store.read(snapshot.provider(), context, now), now);
+        } catch (final IOException | RuntimeException e) { return snapshot; }
     }
 
     public synchronized QuotaHistoryResponse read(final ProviderType provider, final int limit) {

@@ -26,23 +26,26 @@ public final class QuotaForecastCalculator {
         if (!verifiedContext) return unavailable(UNVERIFIED_CONTEXT, samples);
         if (!withinWindow(last)) return unavailable(DISCONTINUOUS, samples);
         if (last.usedPercent() >= 100) return unavailable(EXHAUSTED, samples);
-        if (samples.size() < 3) return unavailable(INSUFFICIENT_DATA, samples);
-        final double span = seconds(first.observedAt(), last.observedAt());
-        if (span < MIN_SPAN.toSeconds() || span > LOOKBACK.toSeconds()) return unavailable(INSUFFICIENT_DATA, samples);
         double slowest = Double.POSITIVE_INFINITY;
         double fastest = 0;
         for (int index = 1; index < samples.size(); index++) {
             final var before = samples.get(index - 1);
             final var after = samples.get(index);
+            if (!sameWindow(before, last) || !sameWindow(after, last) || !withinWindow(before) || !withinWindow(after)) {
+                return unavailable(DISCONTINUOUS, samples);
+            }
             final double elapsed = seconds(before.observedAt(), after.observedAt());
-            if (!sameWindow(before, last) || !sameWindow(after, last) || !withinWindow(before) || !withinWindow(after)
-                    || elapsed <= 0 || elapsed > MAX_GAP.toSeconds() || after.usedPercent() < before.usedPercent()) {
+            if (elapsed <= 0 || elapsed > MAX_GAP.toSeconds() || after.usedPercent() < before.usedPercent()) {
                 return unavailable(DISCONTINUOUS, samples);
             }
             final double pace = (after.usedPercent() - before.usedPercent()) / elapsed;
             slowest = Math.min(slowest, pace);
             fastest = Math.max(fastest, pace);
         }
+        // Even sparse native evidence can reveal a discontinuity that archive supplementation must not bypass.
+        if (samples.size() < 3) return unavailable(INSUFFICIENT_DATA, samples);
+        final double span = seconds(first.observedAt(), last.observedAt());
+        if (span < MIN_SPAN.toSeconds() || span > LOOKBACK.toSeconds()) return unavailable(INSUFFICIENT_DATA, samples);
         final double pace = (last.usedPercent() - first.usedPercent()) / span;
         if (pace <= 0) return unavailable(NO_GROWTH, samples);
         final double remaining = 100 - last.usedPercent();
