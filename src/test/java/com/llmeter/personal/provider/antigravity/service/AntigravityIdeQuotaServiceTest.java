@@ -73,4 +73,23 @@ class AntigravityIdeQuotaServiceTest {
         final var service = new AntigravityIdeQuotaService(peers::get, endpoint -> { peers.set(List.of()); return response(); },new Time());
         assertThatThrownBy(service::getQuota).isInstanceOf(ProviderCollectionException.class);
     }
+    // Validates rotating environment credentials invalidate the throttled cache and cannot authenticate an earlier in-flight response.
+    @Test void shouldKeepRotatedCredentialsIsolated() {
+        final var original = peer(54321);
+        final var rotated = new AntigravityIdeEndpoint(42, Instant.EPOCH, 54321, "SYNTHETIC_ROTATED_TOKEN_1234");
+        final var endpoint = new AtomicReference<>(original);
+        final var calls = new AtomicInteger();
+        final var service = new AntigravityIdeQuotaService(() -> List.of(endpoint.get()), (final var current) -> {
+            calls.incrementAndGet(); return response();
+        }, new Time());
+        service.getQuota();
+        endpoint.set(rotated);
+        service.getQuota();
+        assertThat(calls.get()).isEqualTo(2);
+        endpoint.set(original);
+        final var racing = new AntigravityIdeQuotaService(() -> List.of(endpoint.get()), (final var current) -> {
+            endpoint.set(rotated); return response();
+        }, new Time());
+        assertThatThrownBy(racing::getQuota).isInstanceOf(ProviderCollectionException.class);
+    }
 }
